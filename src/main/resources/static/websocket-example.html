@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat</title>
+    <!--TODO: use local librarires not the inserted into html from external source-->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+</head>
+<body>
+<!--TODO: remove before the finalization of the project. That file is simple example of the usage of websockets-->
+<h2>WebSocket Chat</h2>
+<input type="text" id="message" placeholder="Type a message..."/>
+<button onclick="sendMessage()">Send</button>
+<ul id="messages"></ul>
+<script>
+    var socket = new SockJS('http://localhost:8080/chat');
+    var stompClient = Stomp.over(socket);
+
+    stompClient.connect({}, function () {
+        stompClient.subscribe('/game-session/messages', function (message) {
+            var msg = JSON.parse(message.body);
+            console.log(msg);
+            var li = document.createElement("li");
+            li.appendChild(document.createTextNode(msg.username + ": " + msg.message));
+            document.getElementById("messages").appendChild(li);
+        });
+    });
+
+    function sendMessage() {
+        var message = document.getElementById("message").value;
+        var msg = {username : "user", message : message};
+        stompClient.send("/app/send-message", {}, JSON.stringify(msg));
+        document.getElementById("message").value = '';
+    }
+</script>
+</body>
+</html>
