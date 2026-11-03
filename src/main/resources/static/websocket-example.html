@@ -15,7 +15,7 @@
 <button onclick="sendMessage()">Send</button>
 <ul id="messages"></ul>
 <script>
-    var socket = new SockJS('http://localhost:8080/chat');
+    var socket = new SockJS('http://localhost:8080/ws');
     var stompClient = Stomp.over(socket);
 
     stompClient.connect({}, function () {
