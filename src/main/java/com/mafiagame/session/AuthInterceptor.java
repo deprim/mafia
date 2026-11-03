@@ -26,6 +26,24 @@ public class AuthInterceptor implements ChannelInterceptor {
 //            acc.setUser(new PlayerPrincipal(p.getId(), p.getGameId(), p.getNickname()));
         }
 
+        //todo: create subscription method
+        if (acc.getCommand() == StompCommand.SUBSCRIBE) {
+//            if (!(acc.getUser() instanceof PlayerPrincipal user) || acc.getDestination() == null) {
+//                throw new MessagingException("Unauthorized");
+//            }
+//            String dest = acc.getDestination();
+//            if (dest.startsWith("/user/")) return message;
+//
+//            Matcher m = GAME_TOPIC.matcher(dest);
+//            if (!m.matches() || !user.gameId().equals(UUID.fromString(m.group(1)))) {
+//                throw new MessagingException("Forbidden");
+//            }
+//            if (m.group(2) != null) { // /mafia
+//                Role role = players.findById(user.playerId()).map(Player::getRole).orElse(null);
+//                if (role != Role.MAFIA) throw new MessagingException("Forbidden");
+//            }
+        }
+
         return message;
     }
 }
