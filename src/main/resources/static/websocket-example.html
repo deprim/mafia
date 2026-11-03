@@ -17,9 +17,10 @@
 <script>
     var socket = new SockJS('http://localhost:8080/ws');
     var stompClient = Stomp.over(socket);
+    var gameId = "111";
 
     stompClient.connect({}, function () {
-        stompClient.subscribe('/game-session/messages', function (message) {
+        stompClient.subscribe('/game-session/game/' + gameId, function (message) {
             var msg = JSON.parse(message.body);
             console.log(msg);
             var li = document.createElement("li");
@@ -31,7 +32,7 @@
     function sendMessage() {
         var message = document.getElementById("message").value;
         var msg = {username : "user", message : message};
-        stompClient.send("/app/send-message", {}, JSON.stringify(msg));
+        stompClient.send("/app/" + gameId + "/send-message", {}, JSON.stringify(msg));
         document.getElementById("message").value = '';
     }
 </script>
