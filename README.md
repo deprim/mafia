@@ -82,7 +82,14 @@ The host's guest capability authorizes lobby/game management; each player's capa
 
 ## Frontend
 
-The frontend will use **Thymeleaf, vanilla JavaScript, and Bootstrap**. Thymeleaf renders the pages in the existing Spring MVC application, JavaScript handles REST calls and live game updates, and Bootstrap provides responsive layout and ready-made styling. This keeps the UI and backend in one Maven application without a separate Node.js/Vite build.
+The frontend direction is **Thymeleaf, vanilla JavaScript, and Bootstrap** in the existing Spring MVC application, without a separate Node.js/Vite build. A minimal page at `GET /` renders `src/main/resources/templates/index.html` and references the local browser assets under `src/main/resources/static/vendor/`, so the packaged application has no runtime CDN dependency:
+
+| Asset | Pinned version | Local resource | License |
+|---|---:|---|---|
+| Bootstrap CSS and bundled JavaScript | 5.3.8 | `vendor/bootstrap/5.3.8/` | MIT |
+| `@stomp/stompjs` browser UMD bundle | 7.5.0 | `vendor/stomp/7.5.0/` | Apache-2.0 |
+
+The versioned files are copied from the upstream package distributions: [Bootstrap CSS](https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css), [Bootstrap bundle](https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js), and [STOMP.js UMD bundle](https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.5.0/bundles/stomp.umd.min.js). Each vendor directory includes its upstream license.
 
 ## Technology fit and current alignment
 
@@ -91,7 +98,7 @@ The frontend will use **Thymeleaf, vanilla JavaScript, and Bootstrap**. Thymelea
 | Java and Spring Boot | Java 21; presentation targets Spring Boot 4.1.2; `pom.xml` currently uses 4.0.0. | Compatible: Boot 4.1.2 supports Java 21. Align the Maven parent to the intended version before feature work; do not pin Spring Framework modules to unrelated versions. |
 | Web/API | Spring MVC/REST and Spring WebSocket/STOMP. | Compatible in one servlet-based app. WebFlux is not needed for this project's scale. |
 | Persistence | Spring Data JPA, PostgreSQL, Flyway, and the PostgreSQL Flyway module. | Compatible and already represented in Maven. Keep PostgreSQL as the app database and use Flyway migrations as the schema source of truth. |
-| Frontend | Thymeleaf, vanilla JavaScript, and Bootstrap; a browser-ready `@stomp/stompjs` bundle for STOMP updates. | Fits the existing Spring MVC application and avoids a separate frontend build toolchain. `spring-boot-starter-thymeleaf` and the Bootstrap/client assets are not in the repository yet; keep CSS/JS dependencies pinned and served locally. |
+| Frontend | Thymeleaf, vanilla JavaScript, Bootstrap 5.3.8, and a browser-ready `@stomp/stompjs` 7.5.0 bundle. | Fits the existing Spring MVC application and avoids a separate frontend build toolchain. Thymeleaf rendering and the pinned local vendor assets are now included under `templates/` and `static/vendor/`. |
 | API documentation | `springdoc-openapi-starter-webmvc-ui` 3.0.3. | Springdoc 3.x is the Spring Boot 4 line. The current Maven project packages with Boot 4.0.0 and Springdoc 3.0.3; recheck after aligning Boot to 4.1.2. |
 | Security | Guest players use room-scoped session tokens; an admin has a protected account. | Spring Security can protect `/api/admin/**` and the admin UI while leaving room creation/joining open. Do not require player registration/login. |
 | Lombok | Present as an optional dependency. | Compatible but optional. Avoid Lombok `@Data` on JPA entities; explicit entity methods are easier to reason about for this small model. |
@@ -111,7 +118,7 @@ No separate frontend server, microservices, reactive WebFlux stack, or external 
 
 ## Repository status and local setup
 
-The repository is currently a Spring Boot scaffold, not a playable game. It has a Java 21 application entry point, a context-load test, and configuration for PostgreSQL, Flyway, and Hibernate schema validation. The Maven project includes JPA, validation, Spring MVC, WebSocket, PostgreSQL, Flyway, and Springdoc dependencies. It does not yet contain the proposed game entities, repositories, services, controllers, Thymeleaf templates, Bootstrap assets, admin security/dashboard, or database migrations.
+The repository is currently a Spring Boot scaffold, not a playable game. It has a Java 21 application entry point, a Thymeleaf-rendered root page with pinned local Bootstrap and STOMP.js browser assets, a context-load test, and configuration for PostgreSQL, Flyway, and Hibernate schema validation. The Maven project includes JPA, validation, Spring MVC, Thymeleaf, WebSocket, PostgreSQL, Flyway, and Springdoc dependencies. It does not yet contain the proposed game entities, repositories, game services, admin security/dashboard, or database migrations.
 
 The datasource configuration reads `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. `.env.example` documents these values, but Spring Boot does not load a `.env` file automatically; configure them in the shell or IDE run configuration. For PowerShell, local values can be set like this:
 
@@ -141,12 +148,12 @@ The app is configured for port `8080`, migrations under `classpath:db/migration`
 
 ## TODO BACKLOG START — draft for the Kanban board
 
-Everything above this line is product and architecture context. The unchecked items below are the proposed implementation backlog; they are not yet Jira tickets and should be reviewed before implementation.
+Everything above this line is product and architecture context. The items below are the proposed implementation backlog; they are not yet Jira tickets and should be reviewed before implementation. Checked items are complete in the repository.
 
 ### Toolchain and dependencies — start here
 
 - [ ] **Align the backend version and dependencies** — Use JDK 21 and align the Spring Boot Maven parent to 4.1.2. Keep the existing JPA, Flyway/PostgreSQL, validation, MVC, WebSocket, PostgreSQL driver, and Springdoc dependencies; add Spring Security for the protected admin area only. **Done when:** `.\mvnw.cmd -DskipTests package` succeeds with the documented versions.
-- [ ] **Set up the Thymeleaf frontend dependencies** — Add `spring-boot-starter-thymeleaf`; add pinned Bootstrap CSS/JS and a browser-ready `@stomp/stompjs` bundle as local static assets. No React, Vite, or Node.js build is required. **Done when:** Spring renders a Thymeleaf page and serves the local CSS/JavaScript assets from the packaged application.
+- [x] **Set up the Thymeleaf frontend dependencies** — Add `spring-boot-starter-thymeleaf`; vendor Bootstrap 5.3.8 CSS/bundled JS and the `@stomp/stompjs` 7.5.0 browser UMD bundle as local static assets. No React, Vite, or Node.js build is required. **Done when:** Spring renders a Thymeleaf page and serves the local CSS/JavaScript assets from the packaged application.
 
 ### Scope and design decisions
 
@@ -180,7 +187,7 @@ Everything above this line is product and architecture context. The unchecked it
 
 Complete the work in small, reviewable slices. Each slice should be a separate pull request with its relevant automated tests and manual check completed before merge.
 
-1. **Toolchain and dependencies** — Align Spring Boot and add the Thymeleaf/Bootstrap assets. Manually verify the app builds, renders a page, and serves Swagger UI.
+1. **Toolchain and dependencies** — Align Spring Boot and verify the completed Thymeleaf/Bootstrap setup. Manually verify the app builds, renders a page, and serves Swagger UI.
 2. **Scope decisions** — Confirm the course authentication exception, game rules/limits, guest reconnect behavior, and admin permissions before finalizing the schema.
 3. **Database foundation** — Add migrations and entities. Verify that a clean PostgreSQL database migrates and Hibernate validates the schema.
 4. **Room slice** — Implement room creation/joining and host/guest identity together with the lobby pages. Check creation and joining in two browsers, including refresh/reconnect; use Swagger to inspect REST behavior.
