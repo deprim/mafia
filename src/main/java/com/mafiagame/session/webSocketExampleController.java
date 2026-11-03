@@ -11,8 +11,8 @@ import org.springframework.stereotype.Controller;
 @Controller
 public class webSocketExampleController {
 
-    @MessageMapping("/send-message")
-    @SendTo("/game-session/messages")
+    @MessageMapping("/{gameId}/send-message")
+    @SendTo("/game-session/game/{gameId}")
     public ChatMessage sendMessage(ChatMessage message) {
         return message;
     }
