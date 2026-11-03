@@ -1,9 +1,12 @@
 package com.mafiagame.session;
 
+import com.mafiagame.model.Player;
 import com.mafiagame.repository.PlayerRepository;
+import com.mafiagame.utils.enums.PlayerRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -30,19 +33,19 @@ public class AuthInterceptor implements ChannelInterceptor {
 
         //todo: create subscription method
         if (acc.getCommand() == StompCommand.SUBSCRIBE) {
-//            if (!(acc.getUser() instanceof PlayerPrincipal user) || acc.getDestination() == null) {
-//                throw new MessagingException("Unauthorized");
-//            }
-//            String dest = acc.getDestination();
-//            if (dest.startsWith("/user/")) return message;
-//
+            if (!(acc.getUser() instanceof PlayerPrincipal user) || acc.getDestination() == null) {
+                throw new MessagingException("Unauthorized");
+            }
+            String dest = acc.getDestination();
+            if (dest.startsWith("/user/")) return message;
+
 //            Matcher m = GAME_TOPIC.matcher(dest);
 //            if (!m.matches() || !user.gameId().equals(UUID.fromString(m.group(1)))) {
 //                throw new MessagingException("Forbidden");
 //            }
 //            if (m.group(2) != null) { // /mafia
-//                Role role = players.findById(user.playerId()).map(Player::getRole).orElse(null);
-//                if (role != Role.MAFIA) throw new MessagingException("Forbidden");
+//                PlayerRole role = players.findById(user.playerId()).map(Player::getRole).orElse(null);
+//                if (role != PlayerRole.MAFIA) throw new MessagingException("Forbidden");
 //            }
         }
 
