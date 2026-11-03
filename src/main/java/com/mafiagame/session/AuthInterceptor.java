@@ -1,5 +1,6 @@
 package com.mafiagame.session;
 
+import com.mafiagame.repository.PlayerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class AuthInterceptor implements ChannelInterceptor {
+    final PlayerRepository players;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
