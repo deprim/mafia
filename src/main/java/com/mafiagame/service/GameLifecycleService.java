@@ -41,7 +41,8 @@ public class GameLifecycleService {
     @Value("${game.phase.day:120s}")
     private Duration dayDuration;
 
-    private record Elimination(String nickname) {}
+    private record Elimination(String nickname) {
+    }
 
 
     @Transactional
@@ -85,7 +86,8 @@ public class GameLifecycleService {
         switch (current.getPhaseType()) {
             case NIGHT -> resolveNight(game, current);
             case DAY -> resolveDay(game, current);
-            default -> { }
+            default -> {
+            }
         }
     }
 
@@ -111,10 +113,25 @@ public class GameLifecycleService {
         switch (type) {   // switch on the enum, not on the GamePhase entity
             case NIGHT -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.MAFIA) */ }
             case DAY -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.CIVILIAN) */ }
-            default -> { }
+            default -> {
+            }
         }
     }
 
+    /**
+     * Resolves the night phase for the specified game by applying the night vote result,
+     * broadcasting the elimination outcome, and advancing the lifecycle when appropriate.
+     * <p>
+     * A null victim means no player is eliminated, such as when there are no votes or
+     * the vote ends in a tie. If a victim is present, the player is killed and the
+     * eliminated player's nickname is included in the broadcast result. After the
+     * result is broadcast, the game is checked for a winning condition. If the game
+     * has not finished, the current phase is marked as ended and the game enters the
+     * day phase for the same round.
+     *
+     * @param game    the game whose night phase is being resolved
+     * @param current the current night phase being completed
+     */
     private void resolveNight(Game game, GamePhase current) {
         // TODO: UUID victimId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.MAFIA)
         //                              .orElse(null);
@@ -123,9 +140,29 @@ public class GameLifecycleService {
         Elimination result = new Elimination(victimId == null ? null : kill(victimId));
         broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
 
-        if (!finishIfWon(game)) enterPhase(game, PhaseType.DAY, current.getRoundNumber());   // same round
+        //set ending of the current phase
+        current.setEndedAt(Instant.now());
+        phases.save(current);
+
+        //execute validation of the game finishing conditions and do not generate next phase
+        if (finishIfWon(game)) return;
+
+        enterPhase(game, PhaseType.DAY, current.getRoundNumber());
     }
 
+    /**
+     * Resolves the day phase for the specified game by applying the civilian vote result,
+     * broadcasting the elimination outcome, and advancing the lifecycle when appropriate.
+     * <p>
+     * A null executed player means no player is eliminated, such as when there are no votes
+     * or the vote ends in a tie. If a player is selected, the player is killed and the
+     * eliminated player's nickname is included in the broadcast result. After the result is
+     * broadcast, the game is checked for a winning condition. If the game has not finished,
+     * the game enters the night phase for the next round.
+     *
+     * @param game    the game whose day phase is being resolved
+     * @param current the current day phase being completed
+     */
     private void resolveDay(Game game, GamePhase current) {
         // TODO: UUID executedId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.CIVILIAN)
         //                                .orElse(null);
@@ -134,12 +171,25 @@ public class GameLifecycleService {
         Elimination result = new Elimination(executedId == null ? null : kill(executedId));
         broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
 
+        //set ending of the current phase
+        current.setEndedAt(Instant.now());
+        phases.save(current);
+
+        //execute validation of the game finishing conditions and do not generate next phase
         if (finishIfWon(game)) return;
 
         enterPhase(game, PhaseType.NIGHT, current.getRoundNumber() + 1);   // new round starts with night
     }
 
 
+    /**
+     * Checks whether the specified game has reached a winning condition and finishes it if so.
+     * Civilians win when no mafia players remain alive. Mafia wins when the number of alive
+     * mafia players is greater than or equal to the number of alive civilian players.
+     *
+     * @param game the game to check for a winning condition
+     * @return true if the game was finished because a winning condition was met, otherwise false
+     */
     private boolean finishIfWon(Game game) {
         List<Player> all = players.findByGameId(game.getId());
         long aliveMafia = countAlive(all, PlayerRole.MAFIA);
@@ -156,6 +206,7 @@ public class GameLifecycleService {
         return false;
     }
 
+
     private void endGame(Game game, PlayerRole winner, List<Player> all) {
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
@@ -171,12 +222,14 @@ public class GameLifecycleService {
                 .count();
     }
 
+
     private String kill(UUID playerId) {
         Player p = players.findById(playerId).orElseThrow();
         p.setStatus(PlayerStatus.DEAD);
         players.save(p);
         return p.getNickname();
     }
+
 
     private void assignRoles(List<Player> list) {
         Collections.shuffle(list);
