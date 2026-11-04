@@ -1,4 +1,4 @@
-package com.mafiagame.session;
+package com.mafiagame.controller;
 
 import com.mafiagame.dto.ChatMessage;
 import org.springframework.messaging.handler.annotation.MessageMapping;
