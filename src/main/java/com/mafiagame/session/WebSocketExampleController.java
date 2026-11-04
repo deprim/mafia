@@ -9,7 +9,7 @@ import org.springframework.stereotype.Controller;
 //example controller is not for the final version of the project
 //template for future usage and functionalities only
 @Controller
-public class webSocketExampleController {
+public class WebSocketExampleController {
 
     @MessageMapping("/{gameId}/send-message")
     @SendTo("/game-session/game/{gameId}")

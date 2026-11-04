@@ -1,39 +1,77 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Chat</title>
-    <!--TODO: use local librarires not the inserted into html from external source-->
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
-</head>
+<html>
 <body>
-<!--TODO: remove before the finalization of the project. That file is simple example of the usage of websockets-->
-<h2>WebSocket Chat</h2>
-<input type="text" id="message" placeholder="Type a message..."/>
-<button onclick="sendMessage()">Send</button>
-<ul id="messages"></ul>
+<h3>1. Join</h3>
+<input id="game" placeholder="game id (uuid)" size="40">
+<input id="name" placeholder="nickname">
+<button onclick="join()">Join + connect</button>
+
+<h3>2. Mafia channel (only after role = MAFIA in DB)</h3>
+<button onclick="subscribeMafia()">Subscribe to mafia channel</button>
+
+<h3>3. Trigger GameBroadcaster</h3>
+<input id="text" placeholder="message">
+<button onclick="trigger('all')">toGame (everyone)</button>
+<button onclick="trigger('mafia')">toMafia (mafia only)</button>
+
+<h3>Log</h3>
+<ul id="log"></ul>
+
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
 <script>
-    var socket = new SockJS('http://localhost:8080/ws');
-    var stompClient = Stomp.over(socket);
-    var gameId = "111";
+    let client, gameId;
 
-    stompClient.connect({}, function () {
-        stompClient.subscribe('/game-session/game/' + gameId, function (message) {
-            var msg = JSON.parse(message.body);
-            console.log(msg);
-            var li = document.createElement("li");
-            li.appendChild(document.createTextNode(msg.username + ": " + msg.message));
-            document.getElementById("messages").appendChild(li);
-        });
-    });
+    const log = (text) =>
+      document.getElementById('log').insertAdjacentHTML('beforeend', `<li>${text}</li>`);
 
-    function sendMessage() {
-        var message = document.getElementById("message").value;
-        var msg = {username : "user", message : message};
-        stompClient.send("/app/" + gameId + "/send-message", {}, JSON.stringify(msg));
-        document.getElementById("message").value = '';
+    async function join() {
+    <!-- ideal if these values will be received on request and will be input to the html on page generation stage -->
+    <!-- these constants should describe the game and user token. In current example they are hard-coded and manualy added to the db. So without records in the db it will not work -->
+      gameId = '5035a4b6-40ef-4b5a-8e14-84fdb5b52305';
+      const token = 'token-alice';
+
+        <!-- the example of the auth. I think it's better to set token in the url and use it from on site entrance or contain it in the session -->
+<!--      const res = await fetch(`/api/games/${gameId}/join`, {-->
+<!--        method: 'POST',-->
+<!--        headers: { 'Content-Type': 'application/json' },-->
+<!--        body: JSON.stringify({ nickname: document.getElementById('name').value })-->
+<!--      });-->
+<!--      const data = await res.json();-->
+<!--      const token = data.sessionToken;       // adjust if your join response differs-->
+
+      log('joined, token received ' + token);
+
+      client = new StompJs.Client({
+        webSocketFactory: () => new SockJS('/ws'),   // remove .withSockJS() on server? use brokerURL instead
+        connectHeaders: { 'X-Session-Token': token },
+        onConnect: () => {
+          log('connected');
+          client.subscribe('/game-session/game/' + gameId, m => {
+            const e = JSON.parse(m.body);
+            log(`[ALL] ${e.type}: ${JSON.stringify(e.data)}`);
+          });
+        },
+        onStompError: f => log('STOMP error: ' + f.headers['message']),
+        onWebSocketClose: () => log('connection closed')
+      });
+      client.activate();
+    }
+
+    function subscribeMafia() {
+      client.subscribe('/game-session/game/' + gameId + '/mafia', m => {
+        const e = JSON.parse(m.body);
+        log(`[MAFIA] ${e.type}: ${JSON.stringify(e.data)}`);
+      });
+      log('mafia subscribe requested');
+    }
+
+    function trigger(kind) {
+      fetch(`/api/example/${gameId}/${kind}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: document.getElementById('text').value })
+      });
     }
 </script>
 </body>

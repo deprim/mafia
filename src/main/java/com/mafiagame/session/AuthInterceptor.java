@@ -2,6 +2,7 @@ package com.mafiagame.session;
 
 import com.mafiagame.model.Player;
 import com.mafiagame.repository.PlayerRepository;
+import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.PlayerRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
@@ -22,23 +23,23 @@ import java.util.regex.Pattern;
 public class AuthInterceptor implements ChannelInterceptor {
     private static final Pattern GAME_TOPIC =
             Pattern.compile("^/game-session/game/([^/]+)(/mafia)?$");
+//            Pattern.compile("^/game-session/game/([0-9a-fA-F-]{36})(/mafia)?$");
 
     final PlayerRepository players;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor acc = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (acc == null || acc.getCommand() == null) return message;
 
         if (acc != null && StompCommand.CONNECT.equals(acc.getCommand())) {
-            //todo: here should be implemented authentication
-//            String token = acc.getFirstNativeHeader("X-Session-Token");
-//            if (token == null) throw new MessagingException("Missing token");
-//            Player p = players.findBySessionTokenHash(Token.hash(token))
-//                    .orElseThrow(() -> new MessagingException("Invalid token"));
-//            acc.setUser(new PlayerPrincipal(p.getId(), p.getGameId(), p.getNickname()));
+            String token = acc.getFirstNativeHeader("X-Session-Token");
+            if (token == null) throw new MessagingException("Missing token");
+            Player p = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(token));
+            if (p == null) throw new MessagingException("Invalid token");
+            acc.setUser(new PlayerPrincipal(p.getId(), p.getGame().getId()));
         }
 
-        //todo: create subscription method
         if (acc.getCommand() == StompCommand.SUBSCRIBE) {
             if (!(acc.getUser() instanceof PlayerPrincipal user) || acc.getDestination() == null) {
                 throw new MessagingException("Unauthorized");
