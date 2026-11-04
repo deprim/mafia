@@ -119,6 +119,9 @@
     if (invitationCode) {
         document.getElementById("join-code").value = invitationCode.toUpperCase();
     }
+    if (new URLSearchParams(window.location.search).get("notice") === "room-closed") {
+        showMessage("The host closed the room.");
+    }
 </script>
 </body>
 </html>

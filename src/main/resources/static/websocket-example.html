@@ -82,6 +82,23 @@
         appendMessage(`[${event.type}] ${typeof event.data === "string" ? event.data : JSON.stringify(event.data)}`);
     }
 
+    function clearRoomSession() {
+        for (const key of [
+            "mafiaDemoGameId",
+            "mafiaDemoJoinCode",
+            "mafiaDemoNickname",
+            "mafiaDemoSessionToken",
+            "mafiaDemoIsHost"
+        ]) {
+            sessionStorage.removeItem(key);
+        }
+    }
+
+    function returnToStartPage() {
+        clearRoomSession();
+        window.location.replace("/?notice=room-closed");
+    }
+
     async function loadHistory() {
         const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
             headers: { "X-Session-Token": token }
@@ -109,11 +126,18 @@
         fetch(`/api/games/${encodeURIComponent(gameId)}`)
             .then(async response => {
                 if (!response.ok) {
+                    if (response.status === 401 || response.status === 404) {
+                        returnToStartPage();
+                        return null;
+                    }
                     throw new Error(`Room lookup failed (${response.status}).`);
                 }
                 return response.json();
             })
             .then(game => {
+                if (!game) {
+                    return;
+                }
                 roomDetails.textContent =
                     `Room ${game.joinCode} · Status: ${game.status.toLowerCase()} · Mafia count: ${game.mafiaCount} · You are ${nickname}`;
             })
@@ -127,7 +151,12 @@
                 showStatus("Connected. Open this room in another browser to try multiplayer.");
                 sendChat.disabled = false;
                 client.subscribe(`/game-session/game/${gameId}`, frame => {
-                    appendEvent(JSON.parse(frame.body));
+                    const event = JSON.parse(frame.body);
+                    if (event.type === "ROOM_CLOSED") {
+                        returnToStartPage();
+                        return;
+                    }
+                    appendEvent(event);
                 });
                 loadHistory().catch(error => showStatus(error.message, true));
             },
@@ -155,16 +184,7 @@
             if (!response.ok) {
                 throw new Error(`Room cancellation failed (${response.status}).`);
             }
-            for (const key of [
-                "mafiaDemoGameId",
-                "mafiaDemoJoinCode",
-                "mafiaDemoNickname",
-                "mafiaDemoSessionToken",
-                "mafiaDemoIsHost"
-            ]) {
-                sessionStorage.removeItem(key);
-            }
-            window.location.href = "/";
+            returnToStartPage();
         } catch (error) {
             showStatus(error.message, true);
         }

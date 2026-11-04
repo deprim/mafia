@@ -10,14 +10,18 @@ import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.JoinCodeGenerator;
 import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.GameStatus;
+import com.mafiagame.websocket.GameBroadcaster;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -27,12 +31,19 @@ public class GameService {
     private final GameRepository gameRepository;
     private final PlayerRepository playerRepository;
     private final GameResultRepository gameResultRepository;
+    private final GameBroadcaster broadcaster;
 
     @Autowired
-    public GameService(GameRepository gameRepository, PlayerRepository playerRepository, GameResultRepository gameResultRepository) {
+    public GameService(
+            GameRepository gameRepository,
+            PlayerRepository playerRepository,
+            GameResultRepository gameResultRepository,
+            GameBroadcaster broadcaster
+    ) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.gameResultRepository = gameResultRepository;
+        this.broadcaster = broadcaster;
     }
 
 
@@ -143,6 +154,12 @@ public class GameService {
         List<Player> players = playerRepository.findByGameId(id);
         playerRepository.deleteAll(players);
         gameRepository.delete(game);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                broadcaster.toGame(id, "ROOM_CLOSED", Map.of("gameId", id));
+            }
+        });
     }
 
 
