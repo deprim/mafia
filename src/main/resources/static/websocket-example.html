@@ -47,6 +47,7 @@
     const status = document.getElementById("connection-status");
     const messages = document.getElementById("messages");
     const sendChat = document.getElementById("send-chat");
+    const seenEventIds = new Set();
     let client;
 
     function showStatus(text, isError = false) {
@@ -58,6 +59,40 @@
         const item = document.createElement("li");
         item.textContent = text;
         messages.append(item);
+    }
+
+    function appendChatMessage(message) {
+        const eventId = String(message.id);
+        if (seenEventIds.has(eventId)) {
+            return;
+        }
+        seenEventIds.add(eventId);
+
+        const time = message.createdAt
+            ? `${new Date(message.createdAt).toLocaleTimeString()} `
+            : "";
+        appendMessage(`${time}${message.username}: ${message.message}`);
+    }
+
+    function appendEvent(event) {
+        if (event.type === "CHAT") {
+            appendChatMessage(event.data);
+            return;
+        }
+        appendMessage(`[${event.type}] ${typeof event.data === "string" ? event.data : JSON.stringify(event.data)}`);
+    }
+
+    async function loadHistory() {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
+            headers: { "X-Session-Token": token }
+        });
+        const body = await response.json();
+        if (!response.ok) {
+            throw new Error(body.detail || `History request failed (${response.status}).`);
+        }
+        for (const message of body) {
+            appendChatMessage(message);
+        }
     }
 
     if (!gameId || !joinCode || !nickname || !token) {
@@ -92,15 +127,9 @@
                 showStatus("Connected. Open this room in another browser to try multiplayer.");
                 sendChat.disabled = false;
                 client.subscribe(`/game-session/game/${gameId}`, frame => {
-                    const event = JSON.parse(frame.body);
-                    if (event.type === "CHAT") {
-                        appendMessage(`${event.data.username}: ${event.data.message}`);
-                    } else if (event.type) {
-                        appendMessage(`[${event.type}] ${String(event.data)}`);
-                    } else {
-                        appendMessage(`${event.username}: ${event.message}`);
-                    }
+                    appendEvent(JSON.parse(frame.body));
                 });
+                loadHistory().catch(error => showStatus(error.message, true));
             },
             onStompError: frame => {
                 showStatus(`STOMP error: ${frame.headers.message || "connection rejected"}`, true);

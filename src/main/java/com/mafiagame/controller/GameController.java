@@ -3,6 +3,8 @@ package com.mafiagame.controller;
 
 import com.mafiagame.dto.CreateGameRequest;
 import com.mafiagame.dto.GameResponse;
+import com.mafiagame.dto.PersistedChatMessage;
+import com.mafiagame.service.ChatHistoryService;
 import com.mafiagame.service.GameService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,12 +18,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameController {
     private final GameService gameService;
+    private final ChatHistoryService chatHistoryService;
 
     @GetMapping("/{id}")
     public ResponseEntity<GameResponse> getGame(
             @PathVariable UUID id) {
 
         return ResponseEntity.ok(gameService.getGame(id));
+    }
+
+    @GetMapping("/{id}/chat")
+    public ResponseEntity<java.util.List<PersistedChatMessage>> getRecentChatMessages(
+            @PathVariable UUID id,
+            @RequestHeader("X-Session-Token") String rawSessionToken
+    ) {
+        return ResponseEntity.ok(chatHistoryService.recent(id, rawSessionToken));
     }
 
     @PostMapping

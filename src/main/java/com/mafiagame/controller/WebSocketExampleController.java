@@ -1,8 +1,10 @@
 package com.mafiagame.controller;
 
 import com.mafiagame.dto.ChatMessage;
+import com.mafiagame.dto.PersistedChatMessage;
 import com.mafiagame.model.Player;
 import com.mafiagame.repository.PlayerRepository;
+import com.mafiagame.service.ChatHistoryService;
 import com.mafiagame.websocket.PlayerPrincipal;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +20,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WebSocketExampleController {
     private final PlayerRepository players;
+    private final ChatHistoryService chatHistoryService;
     private final GameBroadcaster broadcaster;
 
     @MessageMapping("/{gameId}/send-message")
@@ -38,6 +41,10 @@ public class WebSocketExampleController {
         String nickname = players.findById(player.playerId())
                 .map(Player::getNickname)
                 .orElseThrow(() -> new MessagingException("Player session is invalid"));
-        broadcaster.toGame(gameId, "CHAT", new ChatMessage(text, nickname));
+        PersistedChatMessage saved = chatHistoryService.save(
+                gameId,
+                new ChatMessage(text, nickname)
+        );
+        broadcaster.toChat(gameId, saved);
     }
 }
