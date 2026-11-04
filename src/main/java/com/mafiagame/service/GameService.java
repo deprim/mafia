@@ -10,11 +10,18 @@ import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.JoinCodeGenerator;
 import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.GameStatus;
+import com.mafiagame.websocket.GameBroadcaster;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,18 +31,29 @@ public class GameService {
     private final GameRepository gameRepository;
     private final PlayerRepository playerRepository;
     private final GameResultRepository gameResultRepository;
+    private final GameBroadcaster broadcaster;
 
     @Autowired
-    public GameService(GameRepository gameRepository, PlayerRepository playerRepository, GameResultRepository gameResultRepository) {
+    public GameService(
+            GameRepository gameRepository,
+            PlayerRepository playerRepository,
+            GameResultRepository gameResultRepository,
+            GameBroadcaster broadcaster
+    ) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.gameResultRepository = gameResultRepository;
+        this.broadcaster = broadcaster;
     }
 
 
     @Transactional
     public GameCreationResult createGame(CreateGameRequest request){
+        String nickname = requireNickname(request.nickname());
         Integer mafiaCount = request.mafiaCount();
+        if (mafiaCount == null || mafiaCount < 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1");
+        }
         String joinCode = JoinCodeGenerator.generateJoinCode();
         String rawSessionToken = SessionTokenGenerator.generateToken();
 
@@ -45,7 +63,7 @@ public class GameService {
         gameRepository.save(game);
 
         Player player = new Player(game,
-                request.nickname(),
+                nickname,
                 true,
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
 
@@ -56,10 +74,48 @@ public class GameService {
 
     }
 
+    @Transactional
+    public PlayerJoinResult joinGame(JoinGameRequest request) {
+        String joinCode = request.joinCode() == null
+                ? ""
+                : request.joinCode().trim().toUpperCase(Locale.ROOT);
+        if (joinCode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room code is required");
+        }
+
+        Game game = gameRepository.findByJoinCode(joinCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (game.getStatus() != GameStatus.WAITING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Room is no longer accepting players");
+        }
+
+        String nickname = requireNickname(request.nickname());
+        boolean nicknameTaken = playerRepository.findByGameId(game.getId()).stream()
+                .anyMatch(player -> player.getNickname().equalsIgnoreCase(nickname));
+        if (nicknameTaken) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That nickname is already used in this room");
+        }
+
+        String rawSessionToken = SessionTokenGenerator.generateToken();
+        Player player = new Player(
+                game,
+                nickname,
+                false,
+                SessionTokenGenerator.hashToken(rawSessionToken)
+        );
+        playerRepository.save(player);
+
+        return new PlayerJoinResult(
+                game.getId(),
+                new PlayerResponse(player.getId(), player.getNickname(), player.isHost(), player.getStatus()),
+                rawSessionToken
+        );
+    }
+
     public GameResponse getGame(UUID id){
 
         Game game = gameRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Game no found")); // TODO create exception if not found and use orElseThrow
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
 
         return GameResponse.from(game);
 
@@ -98,6 +154,12 @@ public class GameService {
         List<Player> players = playerRepository.findByGameId(id);
         playerRepository.deleteAll(players);
         gameRepository.delete(game);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                broadcaster.toGame(id, "ROOM_CLOSED", Map.of("gameId", id));
+            }
+        });
     }
 
 
@@ -136,8 +198,14 @@ public class GameService {
         return game;
     }
 
-
-
-
-
+    private String requireNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname is required");
+        }
+        String normalized = nickname.trim();
+        if (normalized.length() > 40) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname must be 40 characters or fewer");
+        }
+        return normalized;
+    }
 }

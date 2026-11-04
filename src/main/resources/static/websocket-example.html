@@ -1,78 +1,234 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Live room demo</title>
+    <link rel="stylesheet" href="/vendor/bootstrap/5.3.8/css/bootstrap.min.css">
+</head>
 <body>
-<h3>1. Join</h3>
-<input id="game" placeholder="game id (uuid)" size="40">
-<input id="name" placeholder="nickname">
-<button onclick="join()">Join + connect</button>
+<main class="container py-4">
+    <h1>Live room demo</h1>
+    <p id="connection-status" role="status">Connecting…</p>
+    <p id="room-details"></p>
+    <p>Invite a guest with this link: <a id="invite-link"></a></p>
+    <p><a href="/">Create or join another room</a></p>
+    <button id="cancel-room" type="button" hidden>Cancel waiting room</button>
 
-<h3>2. Mafia channel (only after role = MAFIA in DB)</h3>
-<button onclick="subscribeMafia()">Subscribe to mafia channel</button>
+    <section>
+        <h2>WebSocket chat</h2>
+        <ul id="messages" aria-live="polite"></ul>
+        <form id="chat-form">
+            <label for="chat-message">Message</label><br>
+            <input id="chat-message" maxlength="300" required>
+            <button id="send-chat" type="submit" disabled>Send to room</button>
+        </form>
+    </section>
 
-<h3>3. Trigger GameBroadcaster</h3>
-<input id="text" placeholder="message">
-<button onclick="trigger('all')">toGame (everyone)</button>
-<button onclick="trigger('mafia')">toMafia (mafia only)</button>
-
-<h3>Log</h3>
-<ul id="log"></ul>
-
-<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+    <section>
+        <h2>GameBroadcaster check</h2>
+        <p>Send a server-side event to everyone subscribed to this room.</p>
+        <form id="broadcast-form">
+            <label for="broadcast-text">Event text</label><br>
+            <input id="broadcast-text" maxlength="300" required>
+            <button id="send-broadcast" type="submit">Broadcast event</button>
+        </form>
+    </section>
+</main>
+<script src="/vendor/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+<script src="/vendor/stomp/7.5.0/stomp.umd.min.js"></script>
 <script>
-    let client, gameId;
+    const gameId = sessionStorage.getItem("mafiaDemoGameId");
+    const joinCode = sessionStorage.getItem("mafiaDemoJoinCode");
+    const nickname = sessionStorage.getItem("mafiaDemoNickname");
+    const token = sessionStorage.getItem("mafiaDemoSessionToken");
+    const isHost = sessionStorage.getItem("mafiaDemoIsHost") === "true";
+    const status = document.getElementById("connection-status");
+    const messages = document.getElementById("messages");
+    const sendChat = document.getElementById("send-chat");
+    const seenEventIds = new Set();
+    let client;
 
-    const log = (text) =>
-      document.getElementById('log').insertAdjacentHTML('beforeend', `<li>${text}</li>`);
-
-    async function join() {
-    <!-- ideal if these values will be received on request and will be input to the html on page generation stage -->
-    <!-- these constants should describe the game and user token. In current example they are hard-coded and manualy added to the db. So without records in the db it will not work -->
-      gameId = '5035a4b6-40ef-4b5a-8e14-84fdb5b52305';
-      const token = 'token-alice';
-
-        <!-- the example of the auth. I think it's better to set token in the url and use it from on site entrance or contain it in the session -->
-<!--      const res = await fetch(`/api/games/${gameId}/join`, {-->
-<!--        method: 'POST',-->
-<!--        headers: { 'Content-Type': 'application/json' },-->
-<!--        body: JSON.stringify({ nickname: document.getElementById('name').value })-->
-<!--      });-->
-<!--      const data = await res.json();-->
-<!--      const token = data.sessionToken;       // adjust if your join response differs-->
-
-      log('joined, token received ' + token);
-
-      client = new StompJs.Client({
-        webSocketFactory: () => new SockJS('/ws'),   // remove .withSockJS() on server? use brokerURL instead
-        connectHeaders: { 'X-Session-Token': token },
-        onConnect: () => {
-          log('connected');
-          client.subscribe('/game-session/game/' + gameId, m => {
-            const e = JSON.parse(m.body);
-            log(`[ALL] ${e.type}: ${JSON.stringify(e.data)}`);
-          });
-        },
-        onStompError: f => log('STOMP error: ' + f.headers['message']),
-        onWebSocketClose: () => log('connection closed')
-      });
-      client.activate();
+    function showStatus(text, isError = false) {
+        status.textContent = text;
+        status.className = isError ? "text-danger" : "";
     }
 
-    function subscribeMafia() {
-      client.subscribe('/game-session/game/' + gameId + '/mafia', m => {
-        const e = JSON.parse(m.body);
-        log(`[MAFIA] ${e.type}: ${JSON.stringify(e.data)}`);
-      });
-      log('mafia subscribe requested');
+    function appendMessage(text) {
+        const item = document.createElement("li");
+        item.textContent = text;
+        messages.append(item);
     }
 
-    function trigger(kind) {
-      fetch(`/api/example/${gameId}/${kind}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: document.getElementById('text').value })
-      });
+    function appendChatMessage(message) {
+        const eventId = String(message.id);
+        if (seenEventIds.has(eventId)) {
+            return;
+        }
+        seenEventIds.add(eventId);
+
+        const time = message.createdAt
+            ? `${new Date(message.createdAt).toLocaleTimeString()} `
+            : "";
+        appendMessage(`${time}${message.username}: ${message.message}`);
     }
+
+    function appendEvent(event) {
+        if (event.type === "CHAT") {
+            appendChatMessage(event.data);
+            return;
+        }
+        appendMessage(`[${event.type}] ${typeof event.data === "string" ? event.data : JSON.stringify(event.data)}`);
+    }
+
+    function clearRoomSession() {
+        for (const key of [
+            "mafiaDemoGameId",
+            "mafiaDemoJoinCode",
+            "mafiaDemoNickname",
+            "mafiaDemoSessionToken",
+            "mafiaDemoIsHost"
+        ]) {
+            sessionStorage.removeItem(key);
+        }
+    }
+
+    function returnToStartPage() {
+        clearRoomSession();
+        window.location.replace("/?notice=room-closed");
+    }
+
+    async function loadHistory() {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
+            headers: { "X-Session-Token": token }
+        });
+        const body = await response.json();
+        if (!response.ok) {
+            throw new Error(body.detail || `History request failed (${response.status}).`);
+        }
+        for (const message of body) {
+            appendChatMessage(message);
+        }
+    }
+
+    if (!gameId || !joinCode || !nickname || !token) {
+        showStatus("This demo tab has no room session. Create or join a room first.", true);
+    } else {
+        const roomDetails = document.getElementById("room-details");
+        roomDetails.textContent = `Room ${joinCode} · You are ${nickname}`;
+        const inviteLink = document.getElementById("invite-link");
+        inviteLink.href = `${window.location.origin}/?join=${encodeURIComponent(joinCode)}`;
+        inviteLink.textContent = inviteLink.href;
+        const cancelRoom = document.getElementById("cancel-room");
+        cancelRoom.hidden = !isHost;
+
+        fetch(`/api/games/${encodeURIComponent(gameId)}`)
+            .then(async response => {
+                if (!response.ok) {
+                    if (response.status === 401 || response.status === 404) {
+                        returnToStartPage();
+                        return null;
+                    }
+                    throw new Error(`Room lookup failed (${response.status}).`);
+                }
+                return response.json();
+            })
+            .then(game => {
+                if (!game) {
+                    return;
+                }
+                roomDetails.textContent =
+                    `Room ${game.joinCode} · Status: ${game.status.toLowerCase()} · Mafia count: ${game.mafiaCount} · You are ${nickname}`;
+            })
+            .catch(error => showStatus(error.message, true));
+
+        client = new StompJs.Client({
+            webSocketFactory: () => new SockJS("/ws"),
+            connectHeaders: { "X-Session-Token": token },
+            reconnectDelay: 5000,
+            onConnect: () => {
+                showStatus("Connected. Open this room in another browser to try multiplayer.");
+                sendChat.disabled = false;
+                client.subscribe(`/game-session/game/${gameId}`, frame => {
+                    const event = JSON.parse(frame.body);
+                    if (event.type === "ROOM_CLOSED") {
+                        returnToStartPage();
+                        return;
+                    }
+                    appendEvent(event);
+                });
+                loadHistory().catch(error => showStatus(error.message, true));
+            },
+            onStompError: frame => {
+                showStatus(`STOMP error: ${frame.headers.message || "connection rejected"}`, true);
+                sendChat.disabled = true;
+            },
+            onWebSocketClose: () => {
+                showStatus("Disconnected. Reconnecting…");
+                sendChat.disabled = true;
+            }
+        });
+        client.activate();
+    }
+
+    document.getElementById("cancel-room").addEventListener("click", async () => {
+        if (!gameId || !token || !isHost) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+                method: "DELETE",
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                throw new Error(`Room cancellation failed (${response.status}).`);
+            }
+            returnToStartPage();
+        } catch (error) {
+            showStatus(error.message, true);
+        }
+    });
+
+    document.getElementById("chat-form").addEventListener("submit", event => {
+        event.preventDefault();
+        const input = document.getElementById("chat-message");
+        const text = input.value.trim();
+        if (!client || !client.connected || !text) {
+            return;
+        }
+        client.publish({
+            destination: `/app/${gameId}/send-message`,
+            body: JSON.stringify({ message: text, username: nickname })
+        });
+        input.value = "";
+    });
+
+    document.getElementById("broadcast-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const input = document.getElementById("broadcast-text");
+        const text = input.value.trim();
+        if (!gameId || !token || !text) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/example/${encodeURIComponent(gameId)}/all`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({ text })
+            });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(errorBody.detail || `Broadcast failed (${response.status}).`);
+            }
+            input.value = "";
+        } catch (error) {
+            showStatus(error.message, true);
+        }
+    });
 </script>
 </body>
 </html>
