@@ -1,6 +1,6 @@
 package com.mafiagame.controller;
 
-import com.mafiagame.session.GameBroadcaster;
+import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

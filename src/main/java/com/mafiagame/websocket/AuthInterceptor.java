@@ -1,4 +1,4 @@
-package com.mafiagame.session;
+package com.mafiagame.websocket;
 
 import com.mafiagame.model.Player;
 import com.mafiagame.repository.PlayerRepository;

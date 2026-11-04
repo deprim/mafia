@@ -1,7 +1,7 @@
 package com.mafiagame.config;
 
 
-import com.mafiagame.session.AuthInterceptor;
+import com.mafiagame.websocket.AuthInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;

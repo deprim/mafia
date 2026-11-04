@@ -1,4 +1,4 @@
-package com.mafiagame.session;
+package com.mafiagame.websocket;
 
 import java.security.Principal;
 import java.util.UUID;
