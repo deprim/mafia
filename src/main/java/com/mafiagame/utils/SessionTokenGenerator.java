@@ -13,7 +13,7 @@ public class SessionTokenGenerator {
 
     private SessionTokenGenerator() {}
 
-    private static String generateToken() {
+    public static String generateToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
