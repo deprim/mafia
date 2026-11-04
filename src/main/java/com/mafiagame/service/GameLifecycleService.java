@@ -6,10 +6,8 @@ import com.mafiagame.model.Player;
 import com.mafiagame.repository.GamePhaseRepository;
 import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
-import com.mafiagame.utils.enums.GameStatus;
-import com.mafiagame.utils.enums.PhaseType;
-import com.mafiagame.utils.enums.PlayerRole;
-import com.mafiagame.utils.enums.PlayerStatus;
+import com.mafiagame.utils.enums.*;
+import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -32,7 +31,7 @@ public class GameLifecycleService {
     private final GameRepository games;
     private final PlayerRepository players;
     private final GamePhaseRepository phases;
-    // TODO: private final GameBroadcaster broadcaster;
+    private final GameBroadcaster broadcaster;
     // TODO: private final VotingService voting;
 
     // TODO: private final PhaseTimerService timer; (not sure is needed or no)
@@ -63,10 +62,7 @@ public class GameLifecycleService {
         game.setStatus(GameStatus.STARTED);
         games.save(game);
 
-        // TODO (broadcaster): after commit send
-        //   - toPlayer(player.getId(), "ROLE_ASSIGNED", Map.of("role", role)) to every player
-        //   - mafia teammates list to each mafia player
-        //   - toGame(gameId, "GAME_STARTED", Map.of())
+        broadcaster.toGame(gameId, "GAME_STARTED", Map.of());
 
         enterPhase(game, PhaseType.NIGHT, 1);   // the game always begins with night of round 1
     }
@@ -109,8 +105,7 @@ public class GameLifecycleService {
         //       countdown and for restoring timers after a restart)
         phases.save(phase);
 
-        // TODO (broadcaster, after commit):
-        //   toGame(id, "PHASE_CHANGED", Map.of("phase", type, "round", round, "endsAt", endsAt))
+        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, "round", round, "endsAt", endsAt));
         // TODO (timer, after commit): timer.schedule(game.getId(), type, round, endsAt)
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
@@ -126,8 +121,7 @@ public class GameLifecycleService {
         UUID victimId = null;   // null = no votes or a tie, nobody dies
 
         Elimination result = new Elimination(victimId == null ? null : kill(victimId));
-        // TODO (broadcaster, after commit): toGame(game.getId(), "NIGHT_RESULT", result)
-        //       announce only who died, never who killed
+        broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
 
         if (!finishIfWon(game)) enterPhase(game, PhaseType.DAY, current.getRoundNumber());   // same round
     }
@@ -138,7 +132,7 @@ public class GameLifecycleService {
         UUID executedId = null;   // null = tie or no votes, nobody is executed
 
         Elimination result = new Elimination(executedId == null ? null : kill(executedId));
-        // TODO (broadcaster, after commit): toGame(game.getId(), "VOTE_RESULT", result)
+        broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
 
         if (finishIfWon(game)) return;
 
@@ -167,8 +161,7 @@ public class GameLifecycleService {
         games.save(game);
 
         // TODO (timer, after commit): timer.cancel(game.getId())
-        // TODO (broadcaster, after commit): toGame(game.getId(), "GAME_ENDED",
-        //       Map.of("winner", winner, "roles", <nickname -> role map built from `all`>))
+        broadcaster.toGame(game.getId(), "GAME_ENDED", Map.of("winner", winner));
         log.info("Game {} finished, winner: {}", game.getId(), winner);
     }
 
