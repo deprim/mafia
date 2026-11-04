@@ -3,15 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Mafia Game</title>
+    <title>Mafia multiplayer demo</title>
     <link rel="stylesheet" th:href="@{/vendor/bootstrap/5.3.8/css/bootstrap.min.css}">
 </head>
 <body>
-<main class="container py-5">
-    <h1 class="display-5">Mafia Game</h1>
-    <p class="lead">The game interface will appear here.</p>
+<main class="container py-4">
+    <h1>Mafia multiplayer demo</h1>
+    <p>Create a room or join one to try the live WebSocket room.</p>
+    <p id="message" role="status" aria-live="polite"></p>
+
+    <section>
+        <h2>Create a room</h2>
+        <form id="create-form">
+            <p>
+                <label for="host-nickname">Host nickname</label><br>
+                <input id="host-nickname" maxlength="40" required>
+            </p>
+            <p>
+                <label for="mafia-count">Mafia count</label><br>
+                <input id="mafia-count" type="number" min="1" value="1" required>
+            </p>
+            <button type="submit">Create room</button>
+        </form>
+    </section>
+
+    <hr>
+
+    <section>
+        <h2>Join a room</h2>
+        <form id="join-form">
+            <p>
+                <label for="join-code">Room code</label><br>
+                <input id="join-code" minlength="8" maxlength="8" required>
+            </p>
+            <p>
+                <label for="guest-nickname">Guest nickname</label><br>
+                <input id="guest-nickname" maxlength="40" required>
+            </p>
+            <button type="submit">Join room</button>
+        </form>
+    </section>
 </main>
 <script th:src="@{/vendor/bootstrap/5.3.8/js/bootstrap.bundle.min.js}"></script>
 <script th:src="@{/vendor/stomp/7.5.0/stomp.umd.min.js}"></script>
+<script>
+    const message = document.getElementById("message");
+
+    function showMessage(text, isError = false) {
+        message.textContent = text;
+        message.className = isError ? "text-danger" : "";
+    }
+
+    async function submitJson(path, data) {
+        const response = await fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        const text = await response.text();
+        let body = null;
+        if (text) {
+            try {
+                body = JSON.parse(text);
+            } catch (error) {
+                throw new Error("The server returned an invalid response.");
+            }
+        }
+        if (!response.ok) {
+            throw new Error(body && body.detail ? body.detail : `Request failed (${response.status}).`);
+        }
+
+        const token = response.headers.get("X-Session-Token");
+        if (!token) {
+            throw new Error("The server did not return a guest session token.");
+        }
+        return { body, token };
+    }
+
+    function openRoom(gameId, joinCode, nickname, token, host) {
+        sessionStorage.setItem("mafiaDemoGameId", gameId);
+        sessionStorage.setItem("mafiaDemoJoinCode", joinCode);
+        sessionStorage.setItem("mafiaDemoNickname", nickname);
+        sessionStorage.setItem("mafiaDemoSessionToken", token);
+        sessionStorage.setItem("mafiaDemoIsHost", String(host));
+        window.location.href = "/websocket-example.html?gameId=" + encodeURIComponent(gameId);
+    }
+
+    document.getElementById("create-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        showMessage("");
+        const nickname = document.getElementById("host-nickname").value.trim();
+        const mafiaCount = Number(document.getElementById("mafia-count").value);
+        try {
+            const result = await submitJson("/api/games", { nickname, mafiaCount });
+            openRoom(result.body.id, result.body.joinCode, nickname, result.token, true);
+        } catch (error) {
+            showMessage(error.message, true);
+        }
+    });
+
+    document.getElementById("join-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        showMessage("");
+        const joinCode = document.getElementById("join-code").value.trim().toUpperCase();
+        const nickname = document.getElementById("guest-nickname").value.trim();
+        try {
+            const result = await submitJson("/api/players", { joinCode, nickname });
+            openRoom(result.body.gameId, joinCode, result.body.player.nickname, result.token, false);
+        } catch (error) {
+            showMessage(error.message, true);
+        }
+    });
+
+    const invitationCode = new URLSearchParams(window.location.search).get("join");
+    if (invitationCode) {
+        document.getElementById("join-code").value = invitationCode.toUpperCase();
+    }
+</script>
 </body>
 </html>

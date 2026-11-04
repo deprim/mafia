@@ -22,22 +22,33 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class AuthInterceptor implements ChannelInterceptor {
     private static final Pattern GAME_TOPIC =
-            Pattern.compile("^/game-session/game/([^/]+)(/mafia)?$");
-//            Pattern.compile("^/game-session/game/([0-9a-fA-F-]{36})(/mafia)?$");
+            Pattern.compile("^/game-session/game/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/mafia)?$");
+    private static final Pattern GAME_MESSAGE =
+            Pattern.compile("^/app/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/send-message$");
 
-    final PlayerRepository players;
+    private final PlayerRepository players;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor acc = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (acc == null || acc.getCommand() == null) return message;
 
-        if (acc != null && StompCommand.CONNECT.equals(acc.getCommand())) {
+        if (StompCommand.CONNECT.equals(acc.getCommand())) {
             String token = acc.getFirstNativeHeader("X-Session-Token");
             if (token == null) throw new MessagingException("Missing token");
-            Player p = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(token));
-            if (p == null) throw new MessagingException("Invalid token");
+            Player p = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(token))
+                    .orElseThrow(() -> new MessagingException("Invalid token"));
             acc.setUser(new PlayerPrincipal(p.getId(), p.getGame().getId()));
+        }
+
+        if (StompCommand.SEND.equals(acc.getCommand())) {
+            if (!(acc.getUser() instanceof PlayerPrincipal user) || acc.getDestination() == null) {
+                throw new MessagingException("Unauthorized");
+            }
+            Matcher m = GAME_MESSAGE.matcher(acc.getDestination());
+            if (!m.matches() || !user.gameId().equals(UUID.fromString(m.group(1)))) {
+                throw new MessagingException("Forbidden");
+            }
         }
 
         if (acc.getCommand() == StompCommand.SUBSCRIBE) {
