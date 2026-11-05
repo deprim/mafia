@@ -54,9 +54,8 @@ public class VotingService {
         if (game.getStatus() != GameStatus.STARTED)
             throw new IllegalStateException("Game is not running");
 
-        //todo: add and modify or else handler for pahses;
-        GamePhase phase = phases.findFirstByGameIdOrderByStartedAtDesc(gameId);
-//                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
+        GamePhase phase = phases.findFirstByGameIdOrderByStartedAtDesc(gameId)
+                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
         VotingType type = VotingType.forPhase(phase.getPhaseType())
                 .orElseThrow(() -> new IllegalStateException("the role is not exists"));
 
@@ -71,7 +70,7 @@ public class VotingService {
         Vote vote = votes.findByPhaseIdAndTargetId(phase.getId(), voterId)
                 .orElseGet(() -> new Vote(phase, voter, target));
         vote.setTarget(target);
-        votes.save(vote);
+        votes.saveAndFlush(vote);
 
         broadcaster.toMafia(gameId, "VOTE_UPDATED", Map.of("voter", voterId, "target", targetId));
 

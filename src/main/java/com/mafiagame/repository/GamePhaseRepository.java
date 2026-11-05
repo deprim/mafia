@@ -8,6 +8,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface GamePhaseRepository extends JpaRepository<GamePhase, UUID> {
-    GamePhase findFirstByGameIdOrderByStartedAtDesc(UUID gameId);
+    Optional<GamePhase> findFirstByGameIdOrderByStartedAtDesc(UUID gameId);
     Optional<GamePhase> findByGameIdAndStatus(UUID gameId, GamePhaseStatus status);
 }
