@@ -1,13 +1,11 @@
 
 package com.mafiagame.controller;
 
-import com.mafiagame.dto.CreateGameRequest;
-import com.mafiagame.dto.GameResponse;
-import com.mafiagame.dto.GameStateResponse;
-import com.mafiagame.dto.PersistedChatMessage;
+import com.mafiagame.dto.*;
 import com.mafiagame.service.ChatHistoryService;
 import com.mafiagame.service.GameLifecycleService;
 import com.mafiagame.service.GameService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,4 +62,17 @@ public class GameController {
         gameService.deleteGame(id, rawSessionToken);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/adavance")
+    public ResponseEntity<Void> advancePhase(
+            @PathVariable UUID id,
+            @RequestHeader("X-Session-Token") String rawSessionToken,
+            @Valid @RequestBody AdvancePhaseRequest request
+    ) {
+
+        gameLifecycleService.advance(id, rawSessionToken, request.expectedType(), request.expectedRound());
+        return ResponseEntity.noContent().build();
+
+    }
+
 }
