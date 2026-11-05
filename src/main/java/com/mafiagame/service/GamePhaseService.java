@@ -3,8 +3,6 @@ package com.mafiagame.service;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.repository.GamePhaseRepository;
-import com.mafiagame.repository.GameRepository;
-import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.enums.PhaseType;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
@@ -20,10 +18,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class GamePhaseService {
-    private final GameRepository games;
-    private final PlayerRepository players;
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
+
+    private static final String ROUND_TAG = "round";
 
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
@@ -36,11 +34,17 @@ public class GamePhaseService {
         phase.setEndedAt(endsAt);
         phases.save(phase);
 
-        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, "round", round, "endsAt", endsAt));
+        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, ROUND_TAG, round, "endsAt", endsAt));
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
-            case NIGHT -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.MAFIA) */ }
-            case DAY -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.CIVILIAN) */ }
+            case NIGHT -> {
+                //simple send event to the broadcasters with mafia voting. Maybe later will be added new entity for voting save
+                broadcaster.toMafia(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+            }
+            case DAY -> {
+                //simple send event to the broadcasters. Maybe later will be added new entity for voting save
+                broadcaster.toGame(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
+            }
             default -> {
             }
         }
