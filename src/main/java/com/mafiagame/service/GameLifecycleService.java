@@ -3,7 +3,9 @@ package com.mafiagame.service;
 import com.mafiagame.dto.EliminationResult;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
+import com.mafiagame.model.GameResult;
 import com.mafiagame.repository.GameRepository;
+import com.mafiagame.repository.GameResultRepository;
 import com.mafiagame.utils.enums.*;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,7 @@ public class GameLifecycleService {
     private final GamePhaseService gamePhaseService;
     private final PlayerService playerService;
     private final VotingService voting;
+    private final GameResultRepository gameResultRepository;
 
 
     @Transactional
@@ -144,7 +147,7 @@ public class GameLifecycleService {
         long aliveCivilians = playerService.countAlive(game.getId(), PlayerRole.CIVILIAN);
 
         if (aliveMafia == 0) {
-            endGame(game, Team.CIVILIANS);
+            endGame(game, Team.CIVILIAN);
             return true;
         }
         if (aliveMafia >= aliveCivilians) {
@@ -156,10 +159,20 @@ public class GameLifecycleService {
 
 
     private void endGame(Game game, Team winner) {
+        if (game.getStatus() == GameStatus.FINISHED) {
+            return;
+        }
+
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
 
-        broadcaster.toGameAfterCommit(game.getId(), "GAME_ENDED", Map.of("winner", winner));
+        gameResultRepository.save(new GameResult(game, winner));
+
+        broadcaster.toGameAfterCommit(
+                game.getId(),
+                "GAME_ENDED",
+                Map.of("winner", winner)
+        );
         log.info("Game {} finished, winner: {}", game.getId(), winner);
     }
 

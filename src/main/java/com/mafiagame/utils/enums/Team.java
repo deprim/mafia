@@ -1,5 +1,5 @@
 package com.mafiagame.utils.enums;
 
 public enum Team {
-    MAFIA, CIVILIANS
+    MAFIA, CIVILIAN
 }
