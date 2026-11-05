@@ -1,5 +1,6 @@
 package com.mafiagame.service;
 
+import com.mafiagame.dto.PlayerDetailsResponse;
 import com.mafiagame.model.Elimination;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -143,5 +144,25 @@ public class PlayerService {
         }
 
         return requester;
+    }
+
+    public PlayerDetailsResponse getOwnDetails(UUID playerId, String rawSessionToken) {
+        if (rawSessionToken == null || rawSessionToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
+        }
+
+        Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+
+        if (!requester.getId().equals(playerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
+        }
+
+        return PlayerDetailsResponse.from(requester);
+    }
+
+    public boolean isEnoughPlayers(UUID gameId) {
+        List<Player> list = players.findByGameId(gameId);
+        return  list.size() < MIN_PLAYERS;
     }
 }

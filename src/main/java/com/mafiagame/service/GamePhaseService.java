@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -65,11 +66,15 @@ public class GamePhaseService {
      * @return - the latest phase of the game, or null if the game has no phases
      */
     public GamePhase currentPhase(Game game) {
+        return findCurrentPhase(game).orElseThrow(() ->
+                new IllegalStateException("Game has no open phase")
+        );
+    }
+
+    public Optional<GamePhase> findCurrentPhase(Game game) {
         return phases.findByGameIdAndStatus(
                 game.getId(),
                 GamePhaseStatus.OPENED
-        ).orElseThrow(() ->
-                new IllegalStateException("Game has no open phase")
         );
     }
 

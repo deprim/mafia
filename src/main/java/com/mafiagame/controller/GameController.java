@@ -3,6 +3,7 @@ package com.mafiagame.controller;
 
 import com.mafiagame.dto.CreateGameRequest;
 import com.mafiagame.dto.GameResponse;
+import com.mafiagame.dto.GameStateResponse;
 import com.mafiagame.dto.PersistedChatMessage;
 import com.mafiagame.service.ChatHistoryService;
 import com.mafiagame.service.GameLifecycleService;
@@ -23,10 +24,10 @@ public class GameController {
     private final ChatHistoryService chatHistoryService;
 
     @GetMapping("/{id}")
-    public ResponseEntity<GameResponse> getGame(
+    public ResponseEntity<GameStateResponse> getGame(
             @PathVariable UUID id) {
 
-        return ResponseEntity.ok(gameService.getGame(id));
+        return ResponseEntity.ok(gameService.getRoomState(id));
     }
 
     @GetMapping("/{id}/chat")
