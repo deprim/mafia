@@ -11,6 +11,7 @@ import com.mafiagame.utils.JoinCodeGenerator;
 import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.GameStatus;
 import com.mafiagame.websocket.GameBroadcaster;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class GameService {
@@ -60,14 +62,17 @@ public class GameService {
         // TODO Check if join code already exists
 
         Game game = new Game(mafiaCount, joinCode);
+        log.info("Created game with ID {}", game.getId());
         gameRepository.save(game);
 
         Player player = new Player(game,
                 nickname,
                 true,
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
+        log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
         playerRepository.save(player);
+
 
 
         return new GameCreationResult(GameResponse.from(game), rawSessionToken);
@@ -103,7 +108,10 @@ public class GameService {
                 false,
                 SessionTokenGenerator.hashToken(rawSessionToken)
         );
+
+
         playerRepository.save(player);
+        log.info("Player with ID {} joined game {}:", player.getId(), game.getId());
 
         return new PlayerJoinResult(
                 game.getId(),
@@ -133,6 +141,7 @@ public class GameService {
     public GameResponse updateGameSettings(UUID id, UpdateGameSettingsRequest request, String rawSessionToken){
 
         Game game = requireWaitingGameForHost(id, rawSessionToken);
+        log.info("Updating game settings for game {}, old mafiaCount = {}, new mafiaCount = {}", id, game.getMafiaCount(), request.mafiaCount());
         game.setMafiaCount(request.mafiaCount());
         return GameResponse.from(game);
 
@@ -147,6 +156,15 @@ public class GameService {
 
     }
 
+    /**
+     * Deletes a waiting game owned by the host identified by the provided session token.
+     *
+     * Removes all players associated with the game, deletes the game record, and schedules
+     * a room-closed notification to be broadcast after the transaction commits successfully.
+     *
+     * @param id the unique identifier of the game to delete
+     * @param rawSessionToken the raw session token used to verify that the requester is the game host
+     */
     @Transactional
     public void deleteGame(UUID id, String rawSessionToken) {
         Game game = requireWaitingGameForHost(id, rawSessionToken);
@@ -154,6 +172,7 @@ public class GameService {
         List<Player> players = playerRepository.findByGameId(id);
         playerRepository.deleteAll(players);
         gameRepository.delete(game);
+        log.info("Deleting game {} with {} players", id, players.size());
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {

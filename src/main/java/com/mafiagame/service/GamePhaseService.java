@@ -10,20 +10,22 @@ import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class GamePhaseService {
     private final GameRepository games;
     private final PlayerRepository players;
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
 
+    @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
         Instant endsAt = Instant.now();
 
@@ -55,6 +57,7 @@ public class GamePhaseService {
 //                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
     }
 
+    @Transactional
     public void endPhase(GamePhase phase) {
         //set ending of the current phase
         phase.setEndedAt(Instant.now());

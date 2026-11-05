@@ -17,6 +17,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class GameLifecycleService {
 
     private static final int MIN_PLAYERS = 4;
@@ -44,6 +45,7 @@ public class GameLifecycleService {
         playerService.assignRoles(gameId);
         game.setStatus(GameStatus.STARTED);
         games.save(game);
+        log.info("Game {} started", gameId);
 
         broadcaster.toGame(gameId, "GAME_STARTED", Map.of());
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, 1);   // the game always begins with night of round 1
@@ -64,6 +66,7 @@ public class GameLifecycleService {
             return;
         }
 
+        log.info("Advancing game {} to phase {} round {}", gameId, current.getPhaseType(), current.getRoundNumber());
         switch (current.getPhaseType()) {
             case NIGHT -> resolveNight(game, current);
             case DAY -> resolveDay(game, current);
@@ -90,6 +93,7 @@ public class GameLifecycleService {
         // TODO: UUID victimId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.MAFIA)
         //                              .orElse(null);
         UUID victimId = null;   // null = no votes or a tie, nobody dies
+        log.debug("Phase {} has no elimination with game with ID {}", current.getPhaseType(), game.getId());
 
         EliminationResult result = new EliminationResult(victimId == null ? null : playerService.kill(victimId, current));
         broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
@@ -119,6 +123,7 @@ public class GameLifecycleService {
         // TODO: UUID executedId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.CIVILIAN)
         //                                .orElse(null);
         UUID executedId = null;   // null = tie or no votes, nobody is executed
+        log.debug("Phase {} hase no elimination in game with ID {}", current.getPhaseType(), game.getId());
 
 
         EliminationResult result = new EliminationResult(executedId == null ? null : playerService.kill(executedId, current));
@@ -155,6 +160,7 @@ public class GameLifecycleService {
         }
         return false;
     }
+
 
     private void endGame(Game game, PlayerRole winner) {
         game.setStatus(GameStatus.FINISHED);
