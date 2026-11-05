@@ -45,7 +45,7 @@ public class GamePhaseService {
         broadcaster.toGame(
                 game.getId(),
                 "PHASE_CHANGED",
-                Map.of("phase", type, "round", round)
+                Map.of("phase", type, ROUND_TAG, round)
         );
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
