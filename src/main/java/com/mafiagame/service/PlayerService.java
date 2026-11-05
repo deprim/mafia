@@ -94,23 +94,38 @@ public class PlayerService {
 
 
     /**
-     * Randomly assigns roles to the provided players and persists the updated players.
-     * The player list is shuffled before assignment. Approximately one third of the
-     * players are assigned the mafia role, with at least one mafia assigned when the
-     * list contains players; all remaining players are assigned the civilian role.
+     * Randomly assigns the configured Mafia count after validating the roster.
      *
-     * @param gameId - id of the game where players should be assigned roles
+     * @param gameId the game whose players receive roles
+     * @param configuredMafiaCount the Mafia count configured for the game
      */
     @Transactional
-    public void assignRoles(UUID gameId) {
-        List<Player> list = players.findByGameId(gameId);
-        Collections.shuffle(list);
-        int mafiaCount = Math.max(1, list.size() / 3);
-        for (int i = 0; i < list.size(); i++) {
-            list.get(i).setRole(i < mafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
+    public void assignRoles(UUID gameId, Integer configuredMafiaCount) {
+        List<Player> roster = players.findByGameId(gameId);
+        if (roster.size() < MIN_PLAYERS) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Need at least " + MIN_PLAYERS + " players"
+            );
         }
-        players.saveAll(list);
-        log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, list.size(), mafiaCount);
+        if (configuredMafiaCount == null
+                || configuredMafiaCount < 1
+                || 2L * configuredMafiaCount >= roster.size()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Mafia count must be at least 1 and fewer than the number of Civilians"
+            );
+        }
+
+        Collections.shuffle(roster);
+        for (int i = 0; i < roster.size(); i++) {
+            roster.get(i).setRole(i < configuredMafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
+        }
+        players.saveAll(roster);
+        log.info(
+                "Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}",
+                gameId, roster.size(), configuredMafiaCount
+        );
     }
 
     public Player requireHost(UUID gameId, String rawSessionToken) {

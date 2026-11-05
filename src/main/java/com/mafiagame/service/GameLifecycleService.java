@@ -8,8 +8,10 @@ import com.mafiagame.utils.enums.*;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -19,8 +21,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class GameLifecycleService {
-
-    private static final int MIN_PLAYERS = 4;
 
     private final GameRepository games;
     private final GameBroadcaster broadcaster;
@@ -35,12 +35,9 @@ public class GameLifecycleService {
 
         playerService.requireHost(gameId, rawSessionToken);
         if (game.getStatus() != GameStatus.WAITING)
-            throw new IllegalStateException("Game already started");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
 
-        if (playerService.isEnoughPlayers(gameId))
-            throw new IllegalStateException("Need at least " + MIN_PLAYERS + " players");
-
-        playerService.assignRoles(gameId);
+        playerService.assignRoles(gameId, game.getMafiaCount());
         game.setStatus(GameStatus.STARTED);
         games.save(game);
         log.info("Game {} started", gameId);
@@ -167,7 +164,7 @@ public class GameLifecycleService {
     }
 
     private Game lock(UUID gameId) {
-        return games.findById(gameId)
+        return games.findByIdForUpdate(gameId)
                 .orElseThrow(() -> new IllegalArgumentException("Game not found"));
     }
 }
