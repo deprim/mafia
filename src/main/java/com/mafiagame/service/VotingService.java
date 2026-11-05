@@ -72,10 +72,18 @@ public class VotingService {
         vote.setTarget(target);
         votes.saveAndFlush(vote);
 
-        broadcaster.toMafia(game.getId(), "VOTE_UPDATED", Map.of("voter", voterId, "target", targetId));
+        broadcaster.toMafiaAfterCommit(
+                game.getId(),
+                "VOTE_UPDATED",
+                Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber())
+        );
 
         if (allEligibleVoted(game.getId(), phase, type)) {
-            broadcaster.toGame(game.getId(), "VOTE_ENDS", Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber()));
+            broadcaster.toGameAfterCommit(
+                    game.getId(),
+                    "VOTE_ENDS",
+                    Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber())
+            );
         }
     }
 

@@ -42,7 +42,7 @@ public class GameLifecycleService {
         games.save(game);
         log.info("Game {} started", gameId);
 
-        broadcaster.toGame(gameId, "GAME_STARTED", Map.of());
+        broadcaster.toGameAfterCommit(gameId, "GAME_STARTED", Map.of());
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, 1);   // the game always begins with night of round 1
     }
 
@@ -91,7 +91,7 @@ public class GameLifecycleService {
 
         //the priority not found, seems like skip
         EliminationResult result = new EliminationResult(victimId == null ? null : playerService.kill(victimId, current));
-        broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
+        broadcaster.toGameAfterCommit(game.getId(), "VOTE_RESULT", result);
 
         gamePhaseService.endPhase(current);
 
@@ -120,7 +120,7 @@ public class GameLifecycleService {
 
 
         EliminationResult result = new EliminationResult(executedId == null ? null : playerService.kill(executedId, current));
-        broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
+        broadcaster.toGameAfterCommit(game.getId(), "VOTE_RESULT", result);
 
         gamePhaseService.endPhase(current);
 
@@ -144,22 +144,22 @@ public class GameLifecycleService {
         long aliveCivilians = playerService.countAlive(game.getId(), PlayerRole.CIVILIAN);
 
         if (aliveMafia == 0) {
-            endGame(game, PlayerRole.CIVILIAN);
+            endGame(game, Team.CIVILIANS);
             return true;
         }
         if (aliveMafia >= aliveCivilians) {
-            endGame(game, PlayerRole.MAFIA);
+            endGame(game, Team.MAFIA);
             return true;
         }
         return false;
     }
 
 
-    private void endGame(Game game, PlayerRole winner) {
+    private void endGame(Game game, Team winner) {
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
 
-        broadcaster.toGame(game.getId(), "GAME_ENDED", Map.of("winner", winner));
+        broadcaster.toGameAfterCommit(game.getId(), "GAME_ENDED", Map.of("winner", winner));
         log.info("Game {} finished, winner: {}", game.getId(), winner);
     }
 
