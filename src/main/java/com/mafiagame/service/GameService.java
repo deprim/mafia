@@ -33,6 +33,7 @@ public class GameService {
     private final GameRepository gameRepository;
     private final PlayerRepository playerRepository;
     private final GameResultRepository gameResultRepository;
+    private final GamePhaseService gamePhaseService;
     private final GameBroadcaster broadcaster;
 
     @Autowired
@@ -40,11 +41,13 @@ public class GameService {
             GameRepository gameRepository,
             PlayerRepository playerRepository,
             GameResultRepository gameResultRepository,
+            GamePhaseService gamePhaseService,
             GameBroadcaster broadcaster
     ) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.gameResultRepository = gameResultRepository;
+        this.gamePhaseService = gamePhaseService;
         this.broadcaster = broadcaster;
     }
 
@@ -125,6 +128,37 @@ public class GameService {
 
         return GameResponse.from(game);
 
+    }
+
+    public GameStateResponse getRoomState(UUID id) {
+        Game game = gameRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+
+        List<PlayerResponse> players = playerRepository.findByGameId(id).stream()
+                .map(player -> new PlayerResponse(
+                        player.getId(),
+                        player.getNickname(),
+                        player.isHost(),
+                        player.getStatus()
+                ))
+                .toList();
+
+        CurrentPhaseResponse currentPhase = gamePhaseService.findCurrentPhase(game)
+                .map(CurrentPhaseResponse::from)
+                .orElse(null);
+        GameResultResponse result = gameResultRepository.findByGameId(id)
+                .map(GameResultResponse::from)
+                .orElse(null);
+
+        return new GameStateResponse(
+                game.getId(),
+                game.getJoinCode(),
+                game.getMafiaCount(),
+                game.getStatus(),
+                players,
+                currentPhase,
+                result
+        );
     }
 
     public GameResponse getGameByJoinCode(String joinCode) {

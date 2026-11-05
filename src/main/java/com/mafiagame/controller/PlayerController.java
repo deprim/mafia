@@ -3,8 +3,9 @@ package com.mafiagame.controller;
 
 import com.mafiagame.dto.JoinGameRequest;
 import com.mafiagame.dto.JoinGameResponse;
-import com.mafiagame.dto.PlayerResponse;
+import com.mafiagame.dto.PlayerDetailsResponse;
 import com.mafiagame.service.GameService;
+import com.mafiagame.service.PlayerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,13 +18,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlayerController {
     private final GameService gameService;
+    private final PlayerService playerService;
 
     @GetMapping("/{id}")
-    public ResponseEntity<PlayerResponse> getPlayer(
-            @PathVariable UUID id) {
-
-        return ResponseEntity.status(
-                HttpStatus.NOT_IMPLEMENTED).build();
+    public ResponseEntity<PlayerDetailsResponse> getPlayer(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken) {
+        return ResponseEntity.ok(playerService.getOwnDetails(id, rawSessionToken));
     }
 
     @PostMapping
