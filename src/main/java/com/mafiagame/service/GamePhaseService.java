@@ -22,6 +22,7 @@ public class GamePhaseService {
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
 
+
     private static final String ROUND_TAG = "round";
 
     /**
@@ -34,6 +35,10 @@ public class GamePhaseService {
      */
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
+        GamePhase phase = new GamePhase();
+        phase.setGame(game);
+        phase.setRoundNumber(round);
+        phase.setPhaseType(type);
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
