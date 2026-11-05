@@ -16,8 +16,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -114,9 +112,17 @@ public class GameService {
         playerRepository.save(player);
         log.info("Player with ID {} joined game {}:", player.getId(), game.getId());
 
+        PlayerResponse playerResponse = new PlayerResponse(
+                player.getId(),
+                player.getNickname(),
+                player.isHost(),
+                player.getStatus()
+        );
+        broadcaster.toGameAfterCommit(game.getId(), "PLAYER_JOINED", playerResponse);
+
         return new PlayerJoinResult(
                 game.getId(),
-                new PlayerResponse(player.getId(), player.getNickname(), player.isHost(), player.getStatus()),
+                playerResponse,
                 rawSessionToken
         );
     }
@@ -205,12 +211,7 @@ public class GameService {
         playerRepository.deleteAll(players);
         gameRepository.delete(game);
         log.info("Deleting game {} with {} players", id, players.size());
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                broadcaster.toGame(id, "ROOM_CLOSED", Map.of("gameId", id));
-            }
-        });
+        broadcaster.toGameAfterCommit(id, "ROOM_CLOSED", Map.of("gameId", id));
     }
 
 

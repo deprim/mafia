@@ -39,7 +39,7 @@ public class GamePhaseService {
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
-        broadcaster.toGame(
+        broadcaster.toGameAfterCommit(
                 game.getId(),
                 "PHASE_CHANGED",
                 Map.of("phase", type, ROUND_TAG, round)
@@ -48,11 +48,11 @@ public class GamePhaseService {
         switch (type) {   // switch on the enum, not on the GamePhase entity
             case NIGHT -> {
                 //simple send event to the broadcasters with mafia voting. Maybe later will be added new entity for voting save
-                broadcaster.toMafia(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+                broadcaster.toMafiaAfterCommit(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
             }
             case DAY -> {
                 //simple send event to the broadcasters. Maybe later will be added new entity for voting save
-                broadcaster.toGame(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
+                broadcaster.toGameAfterCommit(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
             }
             default -> {
             }
