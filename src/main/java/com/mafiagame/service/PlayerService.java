@@ -8,7 +8,11 @@ import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.enums.PlayerRole;
 import com.mafiagame.utils.enums.PlayerStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.Collections;
@@ -17,6 +21,8 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
+@Transactional(readOnly = true)
 public class PlayerService {
 
     private static final int MIN_PLAYERS = 4;
@@ -39,22 +45,47 @@ public class PlayerService {
 
 
     /**
-     * Marks the player with the specified identifier as dead and saves the updated player.
+     * Eliminates the specified player during the given game phase.
+     * Records the elimination, marks the player as dead, and returns the eliminated
+     * player's nickname.
      *
-     * @param playerId the unique identifier of the player to kill
-     * @return the nickname of the killed player
+     * @param playerId the unique identifier of the player to eliminate
+     * @param current the current game phase in which the elimination occurs
+     * @return the nickname of the eliminated player
+     * @throws RuntimeException if the player is not found, belongs to another game, or is already dead
      */
+    @Transactional
     public String kill(UUID playerId, GamePhase current) {
-        Elimination elimination = new Elimination();
-        elimination.setId(playerId);
-        elimination.setEliminatedAt(Instant.now());
-        elimination.setPhase(current);
-        eliminations.save(elimination);
+        Player player = players.findById(playerId)
+                .orElseThrow(() -> new RuntimeException("Player not found"));
 
-        Player p = players.findById(playerId).orElseThrow();
-        p.setStatus(PlayerStatus.DEAD);
-        players.save(p);
-        return p.getNickname();
+        UUID gameId = current.getGame().getId();
+        UUID phaseId = current.getId();
+
+        if (!player.getGame().getId().equals(gameId)) {
+            throw new RuntimeException("Player belongs to another game");
+        }
+
+        if (player.getStatus() != PlayerStatus.ALIVE) {
+            throw new RuntimeException("Player is already dead");
+        }
+
+        eliminations.save(new Elimination(current, player));
+        player.setStatus(PlayerStatus.DEAD);
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        log.info(
+                                "Player eliminated: gameId= {}, phaseId= {}, playerId= {}",
+                                gameId, phaseId, playerId
+                        );
+                    }
+                }
+        );
+
+        return player.getNickname();
     }
 
 
@@ -66,6 +97,7 @@ public class PlayerService {
      *
      * @param gameId - id of the game where players should be assigned roles
      */
+    @Transactional
     public void assignRoles(UUID gameId) {
         List<Player> list = players.findByGameId(gameId);
         Collections.shuffle(list);
@@ -74,6 +106,7 @@ public class PlayerService {
             list.get(i).setRole(i < mafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
         }
         players.saveAll(list);
+        log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, list.size(), mafiaCount);
     }
 
     public boolean isHost(UUID playerId, UUID gameId) {

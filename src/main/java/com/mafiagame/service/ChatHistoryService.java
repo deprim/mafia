@@ -8,6 +8,7 @@ import com.mafiagame.repository.ChatMessageRepository;
 import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.SessionTokenGenerator;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +21,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
+@Transactional(readOnly = true)
 public class ChatHistoryService {
     private final ChatMessageRepository messageRepository;
     private final GameRepository gameRepository;
@@ -49,17 +52,17 @@ public class ChatHistoryService {
             ));
             return toResponse(saved, message);
         } catch (JacksonException e) {
-            throw new IllegalStateException("Could not serialize chat message", e);
+            throw new IllegalStateException("Could not serialize chat message for game " + gameId, e);
         }
     }
 
-    @Transactional(readOnly = true)
     public List<PersistedChatMessage> recent(UUID gameId, String rawToken) {
         requireRoomPlayer(gameId, rawToken);
         List<ChatMessageRecord> messages = new ArrayList<>(
                 messageRepository.findTop100ByGameIdOrderByIdDesc(gameId)
         );
         Collections.reverse(messages);
+        log.debug("Chat history for game {} loaded: {}", gameId, messages.size() + " messages");
         return messages.stream()
                 .map(this::toResponse)
                 .toList();
