@@ -50,7 +50,7 @@ public class GameService {
 
 
     @Transactional
-    public GameCreationResult createGame(CreateGameRequest request){
+    public GameCreationResult createGame(CreateGameRequest request) {
         String nickname = requireNickname(request.nickname());
         Integer mafiaCount = request.mafiaCount();
         if (mafiaCount == null || mafiaCount < 1) {
@@ -62,17 +62,15 @@ public class GameService {
         // TODO Check if join code already exists
 
         Game game = new Game(mafiaCount, joinCode);
-        log.info("Created game with ID {}", game.getId());
         gameRepository.save(game);
 
         Player player = new Player(game,
                 nickname,
                 true,
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
-        log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
         playerRepository.save(player);
-
+        log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
 
         return new GameCreationResult(GameResponse.from(game), rawSessionToken);
@@ -120,7 +118,7 @@ public class GameService {
         );
     }
 
-    public GameResponse getGame(UUID id){
+    public GameResponse getGame(UUID id) {
 
         Game game = gameRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
@@ -129,7 +127,7 @@ public class GameService {
 
     }
 
-    public GameResponse getGameByJoinCode(String joinCode){
+    public GameResponse getGameByJoinCode(String joinCode) {
         Game game = gameRepository.findByJoinCode(joinCode)
                 .orElseThrow(() -> new RuntimeException("Game with join code " + joinCode + " not found")); // TODO create exception if not found and use orElseThrow
 
@@ -138,7 +136,7 @@ public class GameService {
 
 
     @Transactional
-    public GameResponse updateGameSettings(UUID id, UpdateGameSettingsRequest request, String rawSessionToken){
+    public GameResponse updateGameSettings(UUID id, UpdateGameSettingsRequest request, String rawSessionToken) {
 
         Game game = requireWaitingGameForHost(id, rawSessionToken);
         log.info("Updating game settings for game {}, old mafiaCount = {}, new mafiaCount = {}", id, game.getMafiaCount(), request.mafiaCount());
@@ -147,7 +145,7 @@ public class GameService {
 
     }
 
-    public GameResultResponse getResult(UUID id){
+    public GameResultResponse getResult(UUID id) {
 
         GameResult gameResult = gameResultRepository.findByGameId(id)
                 .orElseThrow(() -> new RuntimeException("Game results not found"));
@@ -158,11 +156,11 @@ public class GameService {
 
     /**
      * Deletes a waiting game owned by the host identified by the provided session token.
-     *
+     * <p>
      * Removes all players associated with the game, deletes the game record, and schedules
      * a room-closed notification to be broadcast after the transaction commits successfully.
      *
-     * @param id the unique identifier of the game to delete
+     * @param id              the unique identifier of the game to delete
      * @param rawSessionToken the raw session token used to verify that the requester is the game host
      */
     @Transactional
@@ -186,8 +184,8 @@ public class GameService {
      * Ensures that a game in a "waiting" state exists and the specified player is its host.
      * Validates the session token and retrieves the associated game if the conditions are met.
      *
-     * @param gameId    the unique identifier of the game to be validated
-     * @param rawToken  the raw session token of the player to authenticate
+     * @param gameId   the unique identifier of the game to be validated
+     * @param rawToken the raw session token of the player to authenticate
      * @return the game instance that meets the specified conditions
      * @throws RuntimeException if the session token is null or blank
      * @throws RuntimeException if the player associated with the token is not found
