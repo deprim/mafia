@@ -26,6 +26,24 @@
         <p id="game-status" role="status" aria-live="polite"></p>
         <p id="game-phase"></p>
         <p><strong>Your role:</strong> <span id="player-role">Loading…</span></p>
+        <p><strong>Your status:</strong> <span id="player-status">Loading…</span></p>
+        <section id="voting-panel" hidden>
+            <h3>Voting</h3>
+            <p id="voting-feedback" role="status" aria-live="polite"></p>
+            <form id="vote-form">
+                <label for="vote-target">Living player</label><br>
+                <select id="vote-target" class="form-select" required disabled>
+                    <option value="">No available targets</option>
+                </select>
+                <button id="submit-vote" class="btn btn-primary mt-2" type="submit" disabled>Submit vote</button>
+            </form>
+        </section>
+        <button id="advance-phase" class="btn btn-warning" type="button" hidden>Advance phase</button>
+        <p id="advance-feedback" role="status" aria-live="polite"></p>
+        <section id="result-view" hidden>
+            <h3>Game result</h3>
+            <p id="winning-team" role="status" aria-live="polite"></p>
+        </section>
     </section>
     <p><a href="/">Create or join another room</a></p>
     <button id="cancel-room" type="button" hidden>Cancel waiting room</button>
@@ -71,6 +89,15 @@
     const gameStatusText = document.getElementById("game-status");
     const gamePhaseText = document.getElementById("game-phase");
     const playerRoleText = document.getElementById("player-role");
+    const playerStatusText = document.getElementById("player-status");
+    const votingPanel = document.getElementById("voting-panel");
+    const votingFeedback = document.getElementById("voting-feedback");
+    const voteTargetSelect = document.getElementById("vote-target");
+    const submitVoteButton = document.getElementById("submit-vote");
+    const advancePhaseButton = document.getElementById("advance-phase");
+    const advanceFeedback = document.getElementById("advance-feedback");
+    const resultView = document.getElementById("result-view");
+    const winningTeamText = document.getElementById("winning-team");
     const messages = document.getElementById("messages");
     const sendChat = document.getElementById("send-chat");
     const seenEventIds = new Set();
@@ -81,6 +108,11 @@
     let startingGame = false;
     let ownPlayerDetails = null;
     let ownDetailsRequest = null;
+    let currentPhase = null;
+    let gameResult = null;
+    let myVoteTargetId = null;
+    let submittingVote = false;
+    let advancingPhase = false;
     let client;
 
     function showStatus(text, isError = false) {
@@ -91,6 +123,16 @@
     function showStartFeedback(text, isError = false) {
         startFeedback.textContent = text;
         startFeedback.className = isError ? "text-danger" : "";
+    }
+
+    function showVotingFeedback(text, isError = false) {
+        votingFeedback.textContent = text;
+        votingFeedback.className = isError ? "text-danger" : "";
+    }
+
+    function showAdvanceFeedback(text, isError = false) {
+        advanceFeedback.textContent = text;
+        advanceFeedback.className = isError ? "text-danger" : "";
     }
 
     async function responseErrorMessage(response, fallback) {
@@ -128,6 +170,108 @@
         startGameButton.hidden = !isHost || !waiting;
         startGameButton.disabled = startingGame || !isHost || !waiting;
         cancelRoom.hidden = !isHost || !waiting;
+    }
+
+    function clearVoteTargets() {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No available targets";
+        voteTargetSelect.replaceChildren(option);
+        voteTargetSelect.disabled = true;
+        submitVoteButton.disabled = true;
+    }
+
+    function renderVotingControls() {
+        votingPanel.hidden = gameStatus !== "STARTED";
+        if (gameStatus !== "STARTED") {
+            clearVoteTargets();
+            return;
+        }
+
+        if (!currentPhase || !currentPhase.phaseId) {
+            showVotingFeedback("No active phase is available for voting.");
+            clearVoteTargets();
+            return;
+        }
+        if (!ownPlayerDetails) {
+            showVotingFeedback("Loading your player details…");
+            clearVoteTargets();
+            return;
+        }
+        if (ownPlayerDetails.status !== "ALIVE") {
+            showVotingFeedback("You have been eliminated and cannot vote.");
+            clearVoteTargets();
+            return;
+        }
+
+        const hasAssignedRole = ownPlayerDetails.role === "MAFIA"
+            || ownPlayerDetails.role === "CIVILIAN";
+        const canVoteInPhase = hasAssignedRole
+            && (currentPhase.phase === "DAY"
+                || (currentPhase.phase === "NIGHT" && ownPlayerDetails.role === "MAFIA"));
+        if (!canVoteInPhase) {
+            showVotingFeedback("You cannot vote during this phase.");
+            clearVoteTargets();
+            return;
+        }
+
+        const targets = [...participants.values()].filter(player =>
+            player.status === "ALIVE" && player.id !== ownPlayerDetails.id
+        );
+        const previousSelection = voteTargetSelect.value;
+        const targetIds = new Set(targets.map(player => player.id));
+        voteTargetSelect.replaceChildren();
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a living player";
+        voteTargetSelect.append(placeholder);
+
+        for (const player of targets) {
+            const option = document.createElement("option");
+            option.value = player.id;
+            option.textContent = player.nickname;
+            voteTargetSelect.append(option);
+        }
+
+        const selectedTargetId = targetIds.has(previousSelection)
+            ? previousSelection
+            : targetIds.has(myVoteTargetId) ? myVoteTargetId : "";
+        voteTargetSelect.value = selectedTargetId;
+
+        const currentTarget = targets.find(player => player.id === myVoteTargetId);
+        if (currentTarget) {
+            showVotingFeedback(`Your current vote: ${currentTarget.nickname}. Select another living player to change it.`);
+        } else if (targets.length > 0) {
+            showVotingFeedback("Choose a living player to submit your vote.");
+        } else {
+            showVotingFeedback("There are no living players available to vote for.");
+        }
+
+        voteTargetSelect.disabled = submittingVote || targets.length === 0;
+        submitVoteButton.textContent = myVoteTargetId ? "Change vote" : "Submit vote";
+        submitVoteButton.disabled = submittingVote
+            || targets.length === 0
+            || !selectedTargetId
+            || selectedTargetId === myVoteTargetId;
+    }
+
+    function updateGameControls() {
+        const finished = gameStatus === "FINISHED";
+        const canAdvance = isHost && gameStatus === "STARTED" && currentPhase && currentPhase.phaseId;
+
+        advancePhaseButton.hidden = !canAdvance;
+        advancePhaseButton.disabled = advancingPhase || !canAdvance;
+
+        resultView.hidden = !finished;
+        if (finished) {
+            const winner = gameResult && gameResult.winningTeam;
+            winningTeamText.textContent = winner
+                ? `Winning team: ${winner.charAt(0) + winner.slice(1).toLowerCase()}.`
+                : "The game has finished, but the winning team is unavailable.";
+        }
+
+        renderVotingControls();
     }
 
     function renderParticipants() {
@@ -192,6 +336,7 @@
                 : "";
         updateRoomDetails();
         updateRoomControls();
+        updateGameControls();
         return true;
     }
 
@@ -211,6 +356,12 @@
             playerRoleText.textContent = gameStatus === "WAITING"
                 ? "Assigned when the game starts."
                 : "Loading role…";
+        }
+        if (ownPlayerDetails && ownPlayerDetails.status) {
+            const playerStatus = ownPlayerDetails.status.toLowerCase();
+            playerStatusText.textContent = playerStatus.charAt(0).toUpperCase() + playerStatus.slice(1);
+        } else {
+            playerStatusText.textContent = "Loading…";
         }
     }
 
@@ -262,6 +413,7 @@
             sessionStorage.setItem("mafiaDemoIsHost", String(isHost));
             renderOwnPlayerDetails();
             updateRoomControls();
+            updateGameControls();
             return details;
         })();
         ownDetailsRequest = request;
@@ -284,18 +436,75 @@
             updateRoomDetails();
             return;
         }
+        if (ownPlayerDetails) {
+            const ownPlayerState = participants.get(ownPlayerDetails.id);
+            if (ownPlayerState) {
+                ownPlayerDetails = {
+                    ...ownPlayerDetails,
+                    status: ownPlayerState.status
+                };
+                renderOwnPlayerDetails();
+            }
+        }
+        const previousPhaseId = currentPhase && currentPhase.phaseId;
+        currentPhase = game.currentPhase || null;
+        const phaseChanged = !currentPhase || currentPhase.phaseId !== previousPhaseId;
+        if (phaseChanged) {
+            myVoteTargetId = null;
+            voteTargetSelect.value = "";
+        }
+        gameResult = game.result || null;
         updateRoomDetails();
 
-        if (game.currentPhase) {
-            setGamePhase(game.currentPhase.phase, game.currentPhase.round);
+        if (currentPhase) {
+            setGamePhase(currentPhase.phase, currentPhase.round);
         } else {
             gamePhaseText.textContent = game.status === "WAITING" ? "" : "No active phase.";
         }
 
+        updateGameControls();
         const refreshOwnDetails = game.status !== "WAITING"
             && (!ownPlayerDetails || !ownPlayerDetails.role);
         loadOwnPlayerDetails(refreshOwnDetails)
+            .then(() => loadMyVote())
             .catch(error => showStatus(error.message, true));
+    }
+
+    async function loadMyVote() {
+        if (gameStatus !== "STARTED" || !currentPhase || !currentPhase.phaseId) {
+            myVoteTargetId = null;
+            updateGameControls();
+            return;
+        }
+
+        const phaseId = currentPhase.phaseId;
+        const response = await fetch(`/api/votes/me?phaseId=${encodeURIComponent(phaseId)}`, {
+            headers: { "X-Session-Token": token }
+        });
+        if (!currentPhase || currentPhase.phaseId !== phaseId) {
+            return;
+        }
+        if (response.status === 404) {
+            myVoteTargetId = null;
+            updateGameControls();
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(await responseErrorMessage(
+                response,
+                `Vote lookup failed (${response.status}).`
+            ));
+        }
+
+        const vote = await response.json();
+        if (!currentPhase || currentPhase.phaseId !== phaseId) {
+            return;
+        }
+        if (!vote || vote.phaseId !== phaseId || typeof vote.targetId !== "string") {
+            throw new Error("The server returned an invalid vote.");
+        }
+        myVoteTargetId = vote.targetId;
+        updateGameControls();
     }
 
     async function loadRoomState() {
@@ -398,9 +607,24 @@
                         setGameStatus("STARTED");
                         loadRoomState().catch(error => showStatus(error.message, true));
                     } else if (event.type === "PHASE_CHANGED" && event.data) {
+                        currentPhase = null;
+                        myVoteTargetId = null;
                         setGamePhase(event.data.phase, event.data.round);
+                        updateGameControls();
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    } else if (event.type === "VOTE_UPDATED"
+                        && event.data
+                        && ownPlayerDetails
+                        && event.data.voterId === ownPlayerDetails.id
+                        && currentPhase
+                        && event.data.phaseId === currentPhase.phaseId) {
+                        myVoteTargetId = event.data.targetId;
+                        updateGameControls();
                     } else if (event.type === "GAME_ENDED") {
                         setGameStatus("FINISHED");
+                        currentPhase = null;
+                        myVoteTargetId = null;
+                        updateGameControls();
                         loadRoomState().catch(error => showStatus(error.message, true));
                     }
                     appendEvent(event);
@@ -419,6 +643,111 @@
         });
         client.activate();
     }
+
+    voteTargetSelect.addEventListener("change", renderVotingControls);
+
+    document.getElementById("vote-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const targetId = voteTargetSelect.value;
+        if (!gameId || !token || !currentPhase || !ownPlayerDetails
+            || gameStatus !== "STARTED"
+            || ownPlayerDetails.status !== "ALIVE"
+            || !targetId
+            || submittingVote) {
+            return;
+        }
+
+        const phaseId = currentPhase.phaseId;
+        const hasAssignedRole = ownPlayerDetails.role === "MAFIA"
+            || ownPlayerDetails.role === "CIVILIAN";
+        const canVoteInPhase = hasAssignedRole
+            && (currentPhase.phase === "DAY"
+                || (currentPhase.phase === "NIGHT" && ownPlayerDetails.role === "MAFIA"));
+        const target = participants.get(targetId);
+        if (!canVoteInPhase
+            || !target
+            || target.status !== "ALIVE"
+            || target.id === ownPlayerDetails.id) {
+            updateGameControls();
+            return;
+        }
+
+        submittingVote = true;
+        updateGameControls();
+        let failureMessage = null;
+        try {
+            const response = await fetch("/api/votes", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({
+                    phaseId,
+                    targetId
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Vote request failed (${response.status}).`
+                ));
+            }
+            if (currentPhase && currentPhase.phaseId === phaseId) {
+                myVoteTargetId = targetId;
+            }
+        } catch (error) {
+            failureMessage = error.message;
+        } finally {
+            submittingVote = false;
+            updateGameControls();
+        }
+        if (failureMessage) {
+            try {
+                await loadRoomState();
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+            showVotingFeedback(`Could not submit vote: ${failureMessage}`, true);
+        }
+    });
+
+    advancePhaseButton.addEventListener("click", async () => {
+        if (!gameId || !token || !isHost || !currentPhase
+            || gameStatus !== "STARTED"
+            || advancingPhase) {
+            return;
+        }
+
+        advancingPhase = true;
+        showAdvanceFeedback("");
+        updateGameControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/advance`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({
+                    expectedType: currentPhase.phase,
+                    expectedRound: currentPhase.round
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Phase advance failed (${response.status}).`
+                ));
+            }
+            await loadRoomState();
+        } catch (error) {
+            showAdvanceFeedback(`Could not advance the phase: ${error.message}`, true);
+        } finally {
+            advancingPhase = false;
+            updateGameControls();
+        }
+    });
 
     startGameButton.addEventListener("click", async () => {
         if (!gameId || !token || !isHost || gameStatus !== "WAITING" || startingGame) {
