@@ -3,8 +3,6 @@ package com.mafiagame.service;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.repository.GamePhaseRepository;
-import com.mafiagame.repository.GameRepository;
-import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.enums.GamePhaseStatus;
 import com.mafiagame.utils.enums.PhaseType;
 import com.mafiagame.websocket.GameBroadcaster;
@@ -21,10 +19,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class GamePhaseService {
-    private final GameRepository games;
-    private final PlayerRepository players;
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
+
+
+    private static final String ROUND_TAG = "round";
 
     /**
      * Starts a new phase for the specified game and notifies all game participants
@@ -36,22 +35,38 @@ public class GamePhaseService {
      */
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
+        GamePhase phase = new GamePhase();
+        phase.setGame(game);
+        phase.setRoundNumber(round);
+        phase.setPhaseType(type);
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
         broadcaster.toGame(
                 game.getId(),
                 "PHASE_CHANGED",
-                Map.of("phase", type, "round", round)
+                Map.of("phase", type, ROUND_TAG, round)
         );
+
+        switch (type) {   // switch on the enum, not on the GamePhase entity
+            case NIGHT -> {
+                //simple send event to the broadcasters with mafia voting. Maybe later will be added new entity for voting save
+                broadcaster.toMafia(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+            }
+            case DAY -> {
+                //simple send event to the broadcasters. Maybe later will be added new entity for voting save
+                broadcaster.toGame(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
+            }
+            default -> {
+            }
+        }
     }
 
     /**
      * Retrieves the currently opened phase for the specified game.
      *
-     * @param game the game whose opened phase is to be retrieved
-     * @return the opened game phase associated with the specified game
-     * @throws IllegalStateException if the game has no opened phase
+     * @param game - the game to get the current phase of
+     * @return - the latest phase of the game, or null if the game has no phases
      */
     public GamePhase currentPhase(Game game) {
         return phases.findByGameIdAndStatus(

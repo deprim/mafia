@@ -26,8 +26,7 @@ public class GameLifecycleService {
     private final GameBroadcaster broadcaster;
     private final GamePhaseService gamePhaseService;
     private final PlayerService playerService;
-    // TODO: private final VotingService voting;
-
+    private final VotingService voting;
 
 
     @Transactional
@@ -90,11 +89,10 @@ public class GameLifecycleService {
      * @param current the current night phase being completed
      */
     private void resolveNight(Game game, GamePhase current) {
-        // TODO: UUID victimId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.MAFIA)
-        //                              .orElse(null);
-        UUID victimId = null;   // null = no votes or a tie, nobody dies
+        UUID victimId = voting.closeVoting(current).orElse(null);   // null = no votes or a tie, nobody dies
         log.debug("Phase {} has no elimination with game with ID {}", current.getPhaseType(), game.getId());
 
+        //the priority not found, seems like skip
         EliminationResult result = new EliminationResult(victimId == null ? null : playerService.kill(victimId, current));
         broadcaster.toGame(game.getId(), "VOTE_RESULT", result);
 
@@ -120,9 +118,7 @@ public class GameLifecycleService {
      * @param current the current day phase being completed
      */
     private void resolveDay(Game game, GamePhase current) {
-        // TODO: UUID executedId = voting.closeVoting(game.getId(), current.getRoundNumber(), VotingType.CIVILIAN)
-        //                                .orElse(null);
-        UUID executedId = null;   // null = tie or no votes, nobody is executed
+        UUID executedId = voting.closeVoting(current).orElse(null);   // null = no votes or a tie, nobody dies
         log.debug("Phase {} hase no elimination in game with ID {}", current.getPhaseType(), game.getId());
 
 
