@@ -5,6 +5,7 @@ import com.mafiagame.dto.CreateGameRequest;
 import com.mafiagame.dto.GameResponse;
 import com.mafiagame.dto.PersistedChatMessage;
 import com.mafiagame.service.ChatHistoryService;
+import com.mafiagame.service.GameLifecycleService;
 import com.mafiagame.service.GameService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameController {
     private final GameService gameService;
+    private final GameLifecycleService gameLifecycleService;
     private final ChatHistoryService chatHistoryService;
 
     @GetMapping("/{id}")
@@ -42,6 +44,15 @@ public class GameController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header("X-Session-Token", result.rawToken())
                 .body(result.game());
+    }
+
+    @PostMapping("/{id}/start")
+    public ResponseEntity<Void> startGame(
+            @PathVariable UUID id,
+            @RequestHeader("X-Session-Token") String rawSessionToken
+    ) {
+        gameLifecycleService.startGame(id, rawSessionToken);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{id}")

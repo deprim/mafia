@@ -67,13 +67,13 @@ Dashboard statistics can be calculated from `GAME`, `PLAYER`, and `GAME_RESULT`;
 
 Use one Spring Boot application as a modular monolith. Render pages with Spring MVC and Thymeleaf; use vanilla JavaScript and Bootstrap for browser interactions and styling. The browser can call REST for initial data and game commands, and use STOMP over WebSocket for live updates. Keep game rules and transitions in services, persistence in repositories, and REST/WebSocket handling in controllers. Use DTOs rather than serializing JPA entities.
 
-Illustrative routes (not implemented; exact paths can be finalized during development):
+Current and illustrative routes (other planned paths may be finalized during development):
 
 | Area | Example operations |
 |---|---|
 | Room lifecycle | `POST /api/games` creates a room and its host-player; `GET /api/games/{joinCode}` returns a safe public room view; `PATCH /api/games/{id}` updates lobby settings; `DELETE /api/games/{id}` cancels/deletes a lobby. |
 | Guest players | `POST /api/games/{joinCode}/players` joins a guest; a player-specific endpoint returns that guest's role/status only. |
-| Game actions | Host-only start/advance operations; player-only vote operations. Validate each operation against the current phase and player status. |
+| Game actions | `POST /api/games/{id}/start` starts a waiting game with the host's `X-Session-Token`; host-only phase-advance operations; player-only vote operations. Validate each operation against the current phase and player status. |
 | Results | Read the completed game's result without exposing ballots or hidden roles. |
 | Admin dashboard | `GET /api/admin/dashboard` and `GET /api/admin/rooms` return aggregate statistics and active-room metadata; require an authenticated `ADMIN` account. |
 | Live updates | A WebSocket handshake (for example `/ws`) with authorized per-game STOMP subscriptions and sanitized room events. |
