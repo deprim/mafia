@@ -30,11 +30,10 @@ public class GameLifecycleService {
 
 
     @Transactional
-    public void startGame(UUID gameId, UUID requesterId) {
+    public void startGame(UUID gameId, String rawSessionToken) {
         Game game = lock(gameId);
 
-        if (!playerService.isHost(requesterId, gameId))
-            throw new IllegalStateException("Only the host can start the game");
+        playerService.requireHost(gameId, rawSessionToken);
         if (game.getStatus() != GameStatus.WAITING)
             throw new IllegalStateException("Game already started");
 
@@ -51,12 +50,13 @@ public class GameLifecycleService {
     }
 
     /**
-     * The single transition method. The timer (and later the "everyone voted" check) calls it.
-     * Stale calls are ignored, so a double call can't skip a phase.
+     * The single host-authorized transition method. Stale calls are ignored, so a double call
+     * can't skip a phase.
      */
     @Transactional
-    public void advance(UUID gameId, PhaseType expectedType, int expectedRound) {
+    public void advance(UUID gameId, String rawSessionToken, PhaseType expectedType, int expectedRound) {
         Game game = lock(gameId);
+        playerService.requireHost(gameId, rawSessionToken);
         if (game.getStatus() != GameStatus.STARTED) return;   // WAITING or FINISHED: nothing to advance
 
         GamePhase current = gamePhaseService.currentPhase(game);

@@ -5,14 +5,17 @@ import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
 import com.mafiagame.repository.EliminationRepository;
 import com.mafiagame.repository.PlayerRepository;
+import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.PlayerRole;
 import com.mafiagame.utils.enums.PlayerStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.Collections;
@@ -109,10 +112,22 @@ public class PlayerService {
         log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, list.size(), mafiaCount);
     }
 
-    public boolean isHost(UUID playerId, UUID gameId) {
-        Player requester = players.findById(playerId).orElseThrow();
+    public Player requireHost(UUID gameId, String rawSessionToken) {
+        if (rawSessionToken == null || rawSessionToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
+        }
 
-        return requester.isHost() && requester.getGame().getId().equals(gameId);
+        Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+
+        if (!requester.getGame().getId().equals(gameId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
+        }
+        if (!requester.isHost()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the host can manage this game");
+        }
+
+        return requester;
     }
 
     public boolean isEnoughPlayers(UUID gameId) {
