@@ -25,16 +25,13 @@ public class GamePhaseService {
 
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
-        Instant endsAt = Instant.now();
-
         GamePhase phase = new GamePhase();
         phase.setGame(game);
         phase.setRoundNumber(round);
         phase.setPhaseType(type);
-        phase.setEndedAt(endsAt);
         phases.save(phase);
 
-        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, ROUND_TAG, round, "endsAt", endsAt));
+        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, ROUND_TAG, round, "startedAt", phase.getStartedAt()));
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
             case NIGHT -> {
