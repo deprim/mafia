@@ -62,16 +62,15 @@ public class GameService {
         // TODO Check if join code already exists
 
         Game game = new Game(mafiaCount, joinCode);
-        log.info("Created game with ID {}", game.getId());
         gameRepository.save(game);
 
         Player player = new Player(game,
                 nickname,
                 true,
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
-        log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
         playerRepository.save(player);
+        log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
 
 
