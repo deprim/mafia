@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
 
 public interface GamePhaseRepository extends JpaRepository<GamePhase, UUID> {
+    GamePhase findFirstByGameIdOrderByStartedAtDesc(UUID gameId);
 }
