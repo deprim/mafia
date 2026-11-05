@@ -16,6 +16,14 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.mafiagame.dto.VoteResponse;
+import com.mafiagame.utils.SessionTokenGenerator;
+import com.mafiagame.utils.enums.GamePhaseStatus;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import com.mafiagame.utils.enums.PhaseType;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -31,53 +39,93 @@ public class VotingService {
     private final VoteRepository votes;
     private final GameBroadcaster broadcaster;
 
+
     /**
-     * Records or updates a player's vote in the current phase of a running game.
-     * The voter and target must both belong to the specified game, must be alive,
-     * and the voter's role must be eligible to vote during the active phase. If the
-     * voter has already voted in the phase, the existing vote is updated to the new
-     * target. Broadcasts vote updates and announces the end of voting when all
-     * eligible players have voted.
+     * Casts or updates the authenticated player's vote for the specified open game phase.
      *
-     * @param phaseId the identifier of the game in which the vote is being cast
-     * @param voterId the identifier of the player casting the vote
-     * @param targetId the identifier of the player being voted for
-     * @throws IllegalArgumentException if the game, voter, or target cannot be found
-     * @throws IllegalStateException if the game is not running, the phase does not
-     * support voting, the voter or target is not alive, or the voter is not eligible
-     * to vote in the current phase
+     * The player is resolved from the provided token, verified to belong to the same game as the
+     * requested phase, and allowed to vote only while the game is started and the phase is still open.
+     * If the player has already voted in the phase, the existing vote is updated to the new target.
+     * Otherwise, a new vote is created. A vote notification is published after the transaction commits.
+     *
+     * @param phaseId the identifier of the game phase in which the vote is being cast
+     * @param targetId the identifier of the player selected as the vote target
+     * @param rawToken the authentication token used to identify the voting player
+     * @throws ResponseStatusException if the phase, game, or target cannot be found, if the voter is
+     *         not part of the game, if the game is not running, if the phase is no longer open, or if
+     *         the vote is invalid
      */
     @Transactional
-    public void castVote(UUID phaseId, UUID voterId, UUID targetId) {
-        GamePhase phase = phases.findFirstByGameIdOrderByStartedAtDesc(phaseId)
-                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
+    public void castVote(UUID phaseId, UUID targetId, String rawToken) {
+        GamePhase requestedPhase = phases.findById(phaseId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Phase not found"
+                ));
 
-        Game game = phase.getGame();
-        if (game.getStatus() != GameStatus.STARTED)
-            throw new IllegalStateException("Game is not running");
+        Game game = games.findByIdForUpdate(requestedPhase.getGame().getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Game not found"
+                ));
 
-        VotingType type = VotingType.forPhase(phase.getPhaseType())
-                .orElseThrow(() -> new IllegalStateException("the role is not exists"));
+        Player voter = requirePlayer(rawToken);
 
-        Player voter = loadPlayer(voterId, game.getId());
-        Player target = loadPlayer(targetId, game.getId());
+        if (!voter.getGame().getId().equals(game.getId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Player is not part of this room"
+            );
+        }
 
-        if (voter.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Dead players can't vote");
-        if (target.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Target is not alive");
-        if (!type.canVote(voter.getRole())) throw new IllegalStateException("You can't vote now");
+        if (game.getStatus() != GameStatus.STARTED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Game is not running"
+            );
+        }
 
-        // upsert: re-voting changes the target of the existing row
-        Vote vote = votes.findByPhaseIdAndTargetId(phase.getId(), voterId)
+        GamePhase phase = phases.findByGameIdAndStatus(
+                        game.getId(), GamePhaseStatus.OPENED
+                ).filter(current -> current.getId().equals(phaseId))
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT, "This phase is no longer open"
+                ));
+
+        Player target = players.findById(targetId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Target not found"
+                ));
+
+        validateVote(phase, voter, target);
+
+        Vote vote = votes.findByPhaseIdAndVoterId(phaseId, voter.getId())
                 .orElseGet(() -> new Vote(phase, voter, target));
+
         vote.setTarget(target);
         votes.saveAndFlush(vote);
 
-        broadcaster.toMafia(game.getId(), "VOTE_UPDATED", Map.of("voter", voterId, "target", targetId));
-
-        if (allEligibleVoted(game.getId(), phase, type)) {
-            broadcaster.toGame(game.getId(), "VOTE_ENDS", Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber()));
-        }
+        publishVoteAfterCommit(phase, voter, target);
     }
+
+    /**
+     * Retrieves the authenticated player's vote for the specified phase.
+     *
+     * @param phaseId the unique identifier of the phase whose vote should be retrieved
+     * @param rawToken the authentication token used to identify the player
+     * @return the player's vote information for the specified phase
+     */
+    @Transactional
+    public VoteResponse getMyVote(UUID phaseId, String rawToken) {
+        Player player = requirePlayer(rawToken);
+
+        Vote vote = votes.findByPhaseIdAndVoterId(phaseId, player.getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "You have no vote in this phase"
+                ));
+
+        return new VoteResponse(
+                vote.getPhase().getId(),
+                vote.getTarget().getId()
+        );
+    }
+
 
     /**
      * Determines the result of voting for the specified game phase by counting votes
@@ -104,18 +152,115 @@ public class VotingService {
         return leaders.size() == 1 ? Optional.of(leaders.getFirst()) : Optional.empty();   // tie = nobody
     }
 
-    private boolean allEligibleVoted(UUID gameId, GamePhase phase, VotingType type) {
-        long eligible = players.findByGameId(gameId).stream()
-                .filter(p -> p.getStatus() == PlayerStatus.ALIVE && type.canVote(p.getRole()))
-                .count();
-        return votes.countByPhaseId(phase.getId()) >= eligible;
+    /**
+     * Resolves the player associated with the provided raw session token.
+     *
+     * @param rawToken the raw session token to validate and look up
+     * @return the player associated with the session token
+     * @throws ResponseStatusException if the token is null, blank, or does not match an existing player session
+     */
+    private Player requirePlayer(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED, "A session token is required"
+            );
+        }
+
+        return players.findBySessionTokenHash(
+                SessionTokenGenerator.hashToken(rawToken)
+        ).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED, "Invalid session token"
+        ));
     }
 
-    private Player loadPlayer(UUID playerId, UUID gameId) {
-        Player p = players.findById(playerId)
-                .orElseThrow(() -> new IllegalArgumentException("Player not found"));
-        if (!p.getGame().getId().equals(gameId))
-            throw new IllegalStateException("Player is not in this game");
-        return p;
+    /**
+     * Validates whether the specified voter is allowed to vote for the specified target
+     * during the given game phase.
+     *
+     * Ensures that the target belongs to the same game as the phase, both players are
+     * alive, the voter is not voting for themselves, voting is available in the current
+     * phase, and the voter's role is permitted to vote for that phase's voting type.
+     *
+     * @param phase the current game phase in which the vote is being cast
+     * @param voter the player attempting to cast the vote
+     * @param target the player selected as the vote target
+     * @throws ResponseStatusException if the vote is invalid for the current game,
+     *         player status, target selection, phase, or voter role
+     */
+    private void validateVote(GamePhase phase, Player voter, Player target) {
+        UUID gameId = phase.getGame().getId();
+
+        if (!target.getGame().getId().equals(gameId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Target is not part of this room"
+            );
+        }
+
+        if (voter.getStatus() != PlayerStatus.ALIVE
+                || target.getStatus() != PlayerStatus.ALIVE) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Voter and target must be alive"
+            );
+        }
+
+        if (voter.getId().equals(target.getId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "You cannot vote for yourself"
+            );
+        }
+
+        VotingType type = VotingType.forPhase(phase.getPhaseType())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT, "Voting is unavailable in this phase"
+                ));
+
+        if (!type.canVote(voter.getRole())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "You cannot vote in this phase"
+            );
+        }
+    }
+
+    /**
+     * Registers a transaction synchronization that publishes a vote update event after
+     * the current transaction commits successfully.
+     *
+     * The event is sent to all game participants during the day phase and to mafia
+     * participants during the night phase. The published payload includes the phase,
+     * voter, and target identifiers.
+     *
+     * @param phase the game phase in which the vote was cast
+     * @param voter the player who cast the vote
+     * @param target the player selected as the vote target
+     */
+    private void publishVoteAfterCommit(
+            GamePhase phase,
+            Player voter,
+            Player target
+    ) {
+        UUID gameId = phase.getGame().getId();
+        PhaseType phaseType = phase.getPhaseType();
+
+        Map<String, UUID> data = Map.of(
+                "phaseId", phase.getId(),
+                "voterId", voter.getId(),
+                "targetId", target.getId()
+        );
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        switch (phaseType) {
+                            case DAY -> broadcaster.toGame(
+                                    gameId, "VOTE_UPDATED", data
+                            );
+                            case NIGHT -> broadcaster.toMafia(
+                                    gameId, "VOTE_UPDATED", data
+                            );
+                        }
+                    }
+                }
+        );
     }
 }
