@@ -35,10 +35,6 @@ public class GamePhaseService {
      */
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
-        GamePhase phase = new GamePhase();
-        phase.setGame(game);
-        phase.setRoundNumber(round);
-        phase.setPhaseType(type);
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
