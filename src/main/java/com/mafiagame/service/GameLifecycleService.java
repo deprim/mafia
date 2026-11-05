@@ -34,8 +34,6 @@ public class GameLifecycleService {
     private final GameBroadcaster broadcaster;
     // TODO: private final VotingService voting;
 
-    // TODO: private final PhaseTimerService timer; (not sure is needed or no)
-
     @Value("${game.phase.night:60s}")
     private Duration nightDuration;
     @Value("${game.phase.day:120s}")
@@ -91,10 +89,6 @@ public class GameLifecycleService {
         }
     }
 
-    // TODO (timer): listener that calls advance(e.gameId(), e.phaseType(), e.round())
-    // TODO (timer): after a server restart, reschedule timers for games with status STARTED
-    //               using the latest phase of each game
-
 
     private void enterPhase(Game game, PhaseType type, int round) {
         Instant endsAt = Instant.now().plus(durationOf(type));
@@ -103,12 +97,10 @@ public class GameLifecycleService {
         phase.setGame(game);
         phase.setRoundNumber(round);
         phase.setPhaseType(type);
-        // TODO: phase.setEndsAt(endsAt) if GamePhase gets an end-time column (needed for the client
-        //       countdown and for restoring timers after a restart)
+        phase.setEndedAt(Instant.now());
         phases.save(phase);
 
         broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, "round", round, "endsAt", endsAt));
-        // TODO (timer, after commit): timer.schedule(game.getId(), type, round, endsAt)
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
             case NIGHT -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.MAFIA) */ }
@@ -211,7 +203,6 @@ public class GameLifecycleService {
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
 
-        // TODO (timer, after commit): timer.cancel(game.getId())
         broadcaster.toGame(game.getId(), "GAME_ENDED", Map.of("winner", winner));
         log.info("Game {} finished, winner: {}", game.getId(), winner);
     }
