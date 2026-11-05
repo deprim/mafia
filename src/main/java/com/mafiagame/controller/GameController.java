@@ -75,4 +75,11 @@ public class GameController {
 
     }
 
+    @GetMapping("/{id}/result")
+    public ResponseEntity<GameResultResponse> getResult(
+            @PathVariable UUID id
+    ) {
+        return ResponseEntity.ok(gameService.getResult(id));
+    }
+
 }
