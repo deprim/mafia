@@ -5,6 +5,7 @@ import com.mafiagame.model.GamePhase;
 import com.mafiagame.repository.GamePhaseRepository;
 import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
+import com.mafiagame.utils.enums.GamePhaseStatus;
 import com.mafiagame.utils.enums.PhaseType;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
@@ -25,45 +26,59 @@ public class GamePhaseService {
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
 
+    /**
+     * Starts a new phase for the specified game and notifies all game participants
+     * that the phase has changed.
+     *
+     * @param game the game for which the new phase is being entered
+     * @param type the type of phase to enter
+     * @param round the round number associated with the new phase
+     */
     @Transactional
     public void enterPhase(Game game, PhaseType type, int round) {
-        Instant endsAt = Instant.now();
-
-        GamePhase phase = new GamePhase();
-        phase.setGame(game);
-        phase.setRoundNumber(round);
-        phase.setPhaseType(type);
-        phase.setEndedAt(endsAt);
+        GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
-        broadcaster.toGame(game.getId(), "PHASE_CHANGED", Map.of("phase", type, "round", round, "endsAt", endsAt));
-
-        switch (type) {   // switch on the enum, not on the GamePhase entity
-            case NIGHT -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.MAFIA) */ }
-            case DAY -> { /* TODO: voting.startVoting(game.getId(), round, VotingType.CIVILIAN) */ }
-            default -> {
-            }
-        }
+        broadcaster.toGame(
+                game.getId(),
+                "PHASE_CHANGED",
+                Map.of("phase", type, "round", round)
+        );
     }
 
     /**
+     * Retrieves the currently opened phase for the specified game.
      *
-     * @param game - the game to get the current phase of
-     * @return - the latest phase of the game, or null if the game has no phases
+     * @param game the game whose opened phase is to be retrieved
+     * @return the opened game phase associated with the specified game
+     * @throws IllegalStateException if the game has no opened phase
      */
     public GamePhase currentPhase(Game game) {
-        return phases.findFirstByGameIdOrderByStartedAtDesc(game.getId());
-        //todo: add or lese throw exception
-//                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
+        return phases.findByGameIdAndStatus(
+                game.getId(),
+                GamePhaseStatus.OPENED
+        ).orElseThrow(() ->
+                new IllegalStateException("Game has no open phase")
+        );
     }
 
+    /**
+     * Closes the specified game phase and records the time at which it ended.
+     *
+     * @param phase the opened game phase to close
+     * @throws IllegalStateException if the phase is not currently opened
+     */
     @Transactional
     public void endPhase(GamePhase phase) {
-        //set ending of the current phase
-        phase.setEndedAt(Instant.now());
-        phases.save(phase);
-    }
+        if (phase.getStatus() != GamePhaseStatus.OPENED) {
+            throw new IllegalStateException("Phase is already closed");
+        }
 
+        phase.setStatus(GamePhaseStatus.CLOSED);
+        phase.setEndedAt(Instant.now());
+
+        phases.saveAndFlush(phase); // Save and flush to ensure the order of operations, CRUCIAL!
+    }
 
 
 }
