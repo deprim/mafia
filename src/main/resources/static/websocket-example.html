@@ -12,6 +12,21 @@
     <p id="connection-status" role="status">Connecting…</p>
     <p id="room-details"></p>
     <p>Invite a guest with this link: <a id="invite-link"></a></p>
+    <section id="lobby-view" hidden>
+        <h2>Lobby</h2>
+        <p>Waiting for the host to start the game.</p>
+        <h3>Participants</h3>
+        <p id="empty-roster">Loading participants…</p>
+        <ul id="participant-list" class="list-group mb-3" aria-live="polite"></ul>
+        <button id="start-game" class="btn btn-primary" type="button" hidden>Start game</button>
+        <p id="start-feedback" role="status" aria-live="polite"></p>
+    </section>
+    <section id="game-view" hidden>
+        <h2>Game</h2>
+        <p id="game-status" role="status" aria-live="polite"></p>
+        <p id="game-phase"></p>
+        <p><strong>Your role:</strong> <span id="player-role">Loading…</span></p>
+    </section>
     <p><a href="/">Create or join another room</a></p>
     <button id="cancel-room" type="button" hidden>Cancel waiting room</button>
 
@@ -43,16 +58,259 @@
     const joinCode = sessionStorage.getItem("mafiaDemoJoinCode");
     const nickname = sessionStorage.getItem("mafiaDemoNickname");
     const token = sessionStorage.getItem("mafiaDemoSessionToken");
-    const isHost = sessionStorage.getItem("mafiaDemoIsHost") === "true";
+    let isHost = false;
     const status = document.getElementById("connection-status");
+    const roomDetails = document.getElementById("room-details");
+    const lobbyView = document.getElementById("lobby-view");
+    const gameView = document.getElementById("game-view");
+    const participantList = document.getElementById("participant-list");
+    const emptyRoster = document.getElementById("empty-roster");
+    const startGameButton = document.getElementById("start-game");
+    const startFeedback = document.getElementById("start-feedback");
+    const cancelRoom = document.getElementById("cancel-room");
+    const gameStatusText = document.getElementById("game-status");
+    const gamePhaseText = document.getElementById("game-phase");
+    const playerRoleText = document.getElementById("player-role");
     const messages = document.getElementById("messages");
     const sendChat = document.getElementById("send-chat");
     const seenEventIds = new Set();
+    const participants = new Map();
+    const gameStatusOrder = { WAITING: 0, STARTED: 1, FINISHED: 2 };
+    let gameStatus = null;
+    let mafiaCount = null;
+    let startingGame = false;
+    let ownPlayerDetails = null;
+    let ownDetailsRequest = null;
     let client;
 
     function showStatus(text, isError = false) {
         status.textContent = text;
         status.className = isError ? "text-danger" : "";
+    }
+
+    function showStartFeedback(text, isError = false) {
+        startFeedback.textContent = text;
+        startFeedback.className = isError ? "text-danger" : "";
+    }
+
+    async function responseErrorMessage(response, fallback) {
+        const text = await response.text();
+        if (!text) {
+            return fallback;
+        }
+
+        let body;
+        try {
+            body = JSON.parse(text);
+        } catch (error) {
+            return fallback;
+        }
+        if (body && typeof body.detail === "string" && body.detail.trim()) {
+            return body.detail;
+        }
+        if (body && typeof body.message === "string" && body.message.trim()) {
+            return body.message;
+        }
+        return fallback;
+    }
+
+    function updateRoomDetails() {
+        if (!joinCode || !nickname) {
+            return;
+        }
+        const statusText = gameStatus ? ` · Status: ${gameStatus.toLowerCase()}` : "";
+        const mafiaText = mafiaCount === null ? "" : ` · Mafia count: ${mafiaCount}`;
+        roomDetails.textContent = `Room ${joinCode}${statusText}${mafiaText} · You are ${nickname}`;
+    }
+
+    function updateRoomControls() {
+        const waiting = gameStatus === "WAITING";
+        startGameButton.hidden = !isHost || !waiting;
+        startGameButton.disabled = startingGame || !isHost || !waiting;
+        cancelRoom.hidden = !isHost || !waiting;
+    }
+
+    function renderParticipants() {
+        const roster = [...participants.values()];
+        participantList.replaceChildren();
+        emptyRoster.hidden = roster.length > 0;
+
+        for (const player of roster) {
+            const item = document.createElement("li");
+            item.className = "list-group-item d-flex justify-content-between align-items-center";
+
+            const name = document.createElement("span");
+            name.textContent = player.nickname;
+            item.append(name);
+
+            if (player.host) {
+                const hostBadge = document.createElement("span");
+                hostBadge.className = "badge text-bg-primary";
+                hostBadge.textContent = "Host";
+                item.append(hostBadge);
+            }
+
+            participantList.append(item);
+        }
+    }
+
+    function mergeParticipants(players) {
+        if (!Array.isArray(players)) {
+            throw new Error("The server returned an invalid participant list.");
+        }
+        for (const player of players) {
+            if (player && player.id) {
+                participants.set(player.id, player);
+            }
+        }
+        renderParticipants();
+    }
+
+    function upsertParticipant(player) {
+        if (!player || !player.id || typeof player.nickname !== "string") {
+            return;
+        }
+        participants.set(player.id, player);
+        renderParticipants();
+    }
+
+    function setGameStatus(nextStatus) {
+        if (!Object.prototype.hasOwnProperty.call(gameStatusOrder, nextStatus)) {
+            throw new Error("The server returned an unknown game status.");
+        }
+        if (gameStatus !== null && gameStatusOrder[nextStatus] < gameStatusOrder[gameStatus]) {
+            return false;
+        }
+
+        gameStatus = nextStatus;
+        lobbyView.hidden = nextStatus !== "WAITING";
+        gameView.hidden = nextStatus === "WAITING";
+        gameStatusText.textContent = nextStatus === "STARTED"
+            ? "The game is in progress."
+            : nextStatus === "FINISHED"
+                ? "The game has finished."
+                : "";
+        updateRoomDetails();
+        updateRoomControls();
+        return true;
+    }
+
+    function setGamePhase(phase, round) {
+        if (typeof phase !== "string" || !Number.isInteger(round)) {
+            return;
+        }
+        const phaseName = phase.charAt(0) + phase.slice(1).toLowerCase();
+        gamePhaseText.textContent = `Current phase: ${phaseName}, round ${round}.`;
+    }
+
+    function renderOwnPlayerDetails() {
+        if (ownPlayerDetails && ownPlayerDetails.role) {
+            const role = ownPlayerDetails.role.toLowerCase();
+            playerRoleText.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        } else {
+            playerRoleText.textContent = gameStatus === "WAITING"
+                ? "Assigned when the game starts."
+                : "Loading role…";
+        }
+    }
+
+    async function loadOwnPlayerDetails(forceRefresh = false) {
+        if (ownDetailsRequest) {
+            const pendingRequest = ownDetailsRequest;
+            await pendingRequest;
+            if (!forceRefresh || (ownPlayerDetails && ownPlayerDetails.role)) {
+                return ownPlayerDetails;
+            }
+            if (ownDetailsRequest === pendingRequest) {
+                ownDetailsRequest = null;
+            }
+            return loadOwnPlayerDetails(true);
+        }
+        if (!forceRefresh && ownPlayerDetails) {
+            return ownPlayerDetails;
+        }
+
+        const ownPlayer = [...participants.values()].find(player =>
+            nickname && player.nickname.toLowerCase() === nickname.toLowerCase()
+        );
+        if (!ownPlayer) {
+            throw new Error("Your player was not found in the room roster.");
+        }
+
+        const request = (async () => {
+            const response = await fetch(`/api/players/${encodeURIComponent(ownPlayer.id)}`, {
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403 || response.status === 404) {
+                    isHost = false;
+                    sessionStorage.setItem("mafiaDemoIsHost", "false");
+                    updateRoomControls();
+                }
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Player lookup failed (${response.status}).`
+                ));
+            }
+
+            const details = await response.json();
+            if (!details || details.id !== ownPlayer.id) {
+                throw new Error("The server returned details for an unexpected player.");
+            }
+            ownPlayerDetails = details;
+            isHost = details.host;
+            sessionStorage.setItem("mafiaDemoIsHost", String(isHost));
+            renderOwnPlayerDetails();
+            updateRoomControls();
+            return details;
+        })();
+        ownDetailsRequest = request;
+        try {
+            return await request;
+        } finally {
+            if (ownDetailsRequest === request) {
+                ownDetailsRequest = null;
+            }
+        }
+    }
+
+    function applyGameState(game) {
+        if (!game || !Array.isArray(game.players)) {
+            throw new Error("The server returned an invalid room state.");
+        }
+        mergeParticipants(game.players);
+        mafiaCount = game.mafiaCount;
+        if (!setGameStatus(game.status)) {
+            updateRoomDetails();
+            return;
+        }
+        updateRoomDetails();
+
+        if (game.currentPhase) {
+            setGamePhase(game.currentPhase.phase, game.currentPhase.round);
+        } else {
+            gamePhaseText.textContent = game.status === "WAITING" ? "" : "No active phase.";
+        }
+
+        const refreshOwnDetails = game.status !== "WAITING"
+            && (!ownPlayerDetails || !ownPlayerDetails.role);
+        loadOwnPlayerDetails(refreshOwnDetails)
+            .catch(error => showStatus(error.message, true));
+    }
+
+    async function loadRoomState() {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}`);
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 404) {
+                returnToStartPage();
+                return;
+            }
+            throw new Error(await responseErrorMessage(
+                response,
+                `Room lookup failed (${response.status}).`
+            ));
+        }
+        applyGameState(await response.json());
     }
 
     function appendMessage(text) {
@@ -115,40 +373,18 @@
     if (!gameId || !joinCode || !nickname || !token) {
         showStatus("This demo tab has no room session. Create or join a room first.", true);
     } else {
-        const roomDetails = document.getElementById("room-details");
-        roomDetails.textContent = `Room ${joinCode} · You are ${nickname}`;
+        updateRoomDetails();
         const inviteLink = document.getElementById("invite-link");
         inviteLink.href = `${window.location.origin}/?join=${encodeURIComponent(joinCode)}`;
         inviteLink.textContent = inviteLink.href;
-        const cancelRoom = document.getElementById("cancel-room");
-        cancelRoom.hidden = !isHost;
-
-        fetch(`/api/games/${encodeURIComponent(gameId)}`)
-            .then(async response => {
-                if (!response.ok) {
-                    if (response.status === 401 || response.status === 404) {
-                        returnToStartPage();
-                        return null;
-                    }
-                    throw new Error(`Room lookup failed (${response.status}).`);
-                }
-                return response.json();
-            })
-            .then(game => {
-                if (!game) {
-                    return;
-                }
-                roomDetails.textContent =
-                    `Room ${game.joinCode} · Status: ${game.status.toLowerCase()} · Mafia count: ${game.mafiaCount} · You are ${nickname}`;
-            })
-            .catch(error => showStatus(error.message, true));
+        loadRoomState().catch(error => showStatus(error.message, true));
 
         client = new StompJs.Client({
             webSocketFactory: () => new SockJS("/ws"),
             connectHeaders: { "X-Session-Token": token },
             reconnectDelay: 5000,
             onConnect: () => {
-                showStatus("Connected. Open this room in another browser to try multiplayer.");
+                showStatus("Connected to the room.");
                 sendChat.disabled = false;
                 client.subscribe(`/game-session/game/${gameId}`, frame => {
                     const event = JSON.parse(frame.body);
@@ -156,8 +392,20 @@
                         returnToStartPage();
                         return;
                     }
+                    if (event.type === "PLAYER_JOINED") {
+                        upsertParticipant(event.data);
+                    } else if (event.type === "GAME_STARTED") {
+                        setGameStatus("STARTED");
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    } else if (event.type === "PHASE_CHANGED" && event.data) {
+                        setGamePhase(event.data.phase, event.data.round);
+                    } else if (event.type === "GAME_ENDED") {
+                        setGameStatus("FINISHED");
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    }
                     appendEvent(event);
                 });
+                loadRoomState().catch(error => showStatus(error.message, true));
                 loadHistory().catch(error => showStatus(error.message, true));
             },
             onStompError: frame => {
@@ -172,7 +420,39 @@
         client.activate();
     }
 
-    document.getElementById("cancel-room").addEventListener("click", async () => {
+    startGameButton.addEventListener("click", async () => {
+        if (!gameId || !token || !isHost || gameStatus !== "WAITING" || startingGame) {
+            return;
+        }
+        startingGame = true;
+        showStartFeedback("");
+        updateRoomControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/start`, {
+                method: "POST",
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Start request failed (${response.status}).`
+                ));
+            }
+            setGameStatus("STARTED");
+        } catch (error) {
+            if (gameStatus === "WAITING") {
+                showStartFeedback(`Could not start the game: ${error.message}`, true);
+            }
+        } finally {
+            startingGame = false;
+            updateRoomControls();
+        }
+        if (gameStatus !== "WAITING") {
+            loadRoomState().catch(error => showStatus(error.message, true));
+        }
+    });
+
+    cancelRoom.addEventListener("click", async () => {
         if (!gameId || !token || !isHost) {
             return;
         }
