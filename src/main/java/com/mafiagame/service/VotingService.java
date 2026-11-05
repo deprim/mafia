@@ -39,7 +39,7 @@ public class VotingService {
      * target. Broadcasts vote updates and announces the end of voting when all
      * eligible players have voted.
      *
-     * @param gameId the identifier of the game in which the vote is being cast
+     * @param phaseId the identifier of the game in which the vote is being cast
      * @param voterId the identifier of the player casting the vote
      * @param targetId the identifier of the player being voted for
      * @throws IllegalArgumentException if the game, voter, or target cannot be found
@@ -48,19 +48,19 @@ public class VotingService {
      * to vote in the current phase
      */
     @Transactional
-    public void castVote(UUID gameId, UUID voterId, UUID targetId) {
-        Game game = games.findById(gameId)
-                .orElseThrow(() -> new IllegalArgumentException("Game not found"));
+    public void castVote(UUID phaseId, UUID voterId, UUID targetId) {
+        GamePhase phase = phases.findFirstByGameIdOrderByStartedAtDesc(phaseId)
+                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
+
+        Game game = phase.getGame();
         if (game.getStatus() != GameStatus.STARTED)
             throw new IllegalStateException("Game is not running");
 
-        GamePhase phase = phases.findFirstByGameIdOrderByStartedAtDesc(gameId)
-                .orElseThrow(() -> new IllegalStateException("Game has no phase"));
         VotingType type = VotingType.forPhase(phase.getPhaseType())
                 .orElseThrow(() -> new IllegalStateException("the role is not exists"));
 
-        Player voter = loadPlayer(voterId, gameId);
-        Player target = loadPlayer(targetId, gameId);
+        Player voter = loadPlayer(voterId, game.getId());
+        Player target = loadPlayer(targetId, game.getId());
 
         if (voter.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Dead players can't vote");
         if (target.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Target is not alive");
@@ -72,10 +72,10 @@ public class VotingService {
         vote.setTarget(target);
         votes.saveAndFlush(vote);
 
-        broadcaster.toMafia(gameId, "VOTE_UPDATED", Map.of("voter", voterId, "target", targetId));
+        broadcaster.toMafia(game.getId(), "VOTE_UPDATED", Map.of("voter", voterId, "target", targetId));
 
-        if (allEligibleVoted(gameId, phase, type)) {
-            broadcaster.toGame(gameId, "VOTE_ENDS", Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber()));
+        if (allEligibleVoted(game.getId(), phase, type)) {
+            broadcaster.toGame(game.getId(), "VOTE_ENDS", Map.of("phase", phase.getPhaseType(), "round", phase.getRoundNumber()));
         }
     }
 
