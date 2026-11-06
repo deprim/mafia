@@ -38,7 +38,7 @@ public class GameController {
 
     @PostMapping
     public ResponseEntity<GameResponse> createGame(
-            @RequestBody CreateGameRequest request) {
+            @Valid @RequestBody CreateGameRequest request) {
         var result = gameService.createGame(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header("X-Session-Token", result.rawToken())
