@@ -5,11 +5,11 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 public record AdvancePhaseRequest(
-        @NotNull
+        @NotNull(message = "expextedType must not be null")
         PhaseType expectedType,
 
-        @NotNull
-        @Positive
+        @NotNull(message = "expectedRound must not be null")
+        @Positive(message = "expectedRound must be a positive integer")
         Integer expectedRound
 
 ) {
