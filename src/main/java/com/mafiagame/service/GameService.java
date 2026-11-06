@@ -136,6 +136,13 @@ public class GameService {
 
     }
 
+    /**
+     * Retrieves the current state of the game room with the specified identifier.
+     *
+     * @param id the unique identifier of the game room to retrieve
+     * @return the current game state, including room details, players, current phase, and result if available
+     * @throws ResponseStatusException if no game room exists with the specified identifier
+     */
     public GameStateResponse getRoomState(UUID id) {
         Game game = gameRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
@@ -185,10 +192,17 @@ public class GameService {
 
     }
 
+    /**
+     * Retrieves the result for the game with the specified identifier.
+     *
+     * @param id the unique identifier of the game whose result is to be retrieved
+     * @return the game result response for the specified game
+     * @throws ResponseStatusException if no game result is found for the specified identifier
+     */
     public GameResultResponse getResult(UUID id) {
 
         GameResult gameResult = gameResultRepository.findByGameId(id)
-                .orElseThrow(() -> new RuntimeException("Game results not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Game result not found"));
 
         return GameResultResponse.from(gameResult);
 
@@ -250,6 +264,14 @@ public class GameService {
         return game;
     }
 
+    /**
+     * Validates that the supplied nickname is present and within the allowed length,
+     * then returns the trimmed nickname.
+     *
+     * @param nickname the nickname to validate
+     * @return the trimmed nickname
+     * @throws ResponseStatusException if the nickname is null, blank, or longer than 40 characters
+     */
     private String requireNickname(String nickname) {
         if (nickname == null || nickname.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname is required");
