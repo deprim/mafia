@@ -202,16 +202,20 @@ public class VotingService {
                 "targetId", target.getId()
         );
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        switch (phaseType) {
-                            case DAY -> broadcaster.toGame(gameId, "VOTE_UPDATED", data);
-                            case NIGHT -> broadcaster.toMafia(gameId, "VOTE_UPDATED", data);
-                        }
-                    }
-                }
-        );
+        switch (phaseType) {
+            case DAY -> broadcaster.toGameAfterCommit(gameId, "VOTE_UPDATED", data);
+            case NIGHT -> broadcaster.toMafiaAfterCommit(gameId, "VOTE_UPDATED", data);
+        }
+//        TransactionSynchronizationManager.registerSynchronization(
+//                new TransactionSynchronization() {
+//                    @Override
+//                    public void afterCommit() {
+//                        switch (phaseType) {
+//                            case DAY -> broadcaster.toGame(gameId, "VOTE_UPDATED", data);
+//                            case NIGHT -> broadcaster.toMafia(gameId, "VOTE_UPDATED", data);
+//                        }
+//                    }
+//                }
+//        );
     }
 }
