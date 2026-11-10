@@ -22,8 +22,6 @@ import com.mafiagame.utils.enums.GamePhaseStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import com.mafiagame.utils.enums.PhaseType;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -206,16 +204,5 @@ public class VotingService {
             case DAY -> broadcaster.toGameAfterCommit(gameId, "VOTE_UPDATED", data);
             case NIGHT -> broadcaster.toMafiaAfterCommit(gameId, "VOTE_UPDATED", data);
         }
-//        TransactionSynchronizationManager.registerSynchronization(
-//                new TransactionSynchronization() {
-//                    @Override
-//                    public void afterCommit() {
-//                        switch (phaseType) {
-//                            case DAY -> broadcaster.toGame(gameId, "VOTE_UPDATED", data);
-//                            case NIGHT -> broadcaster.toMafia(gameId, "VOTE_UPDATED", data);
-//                        }
-//                    }
-//                }
-//        );
     }
 }
