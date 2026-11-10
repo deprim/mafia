@@ -36,8 +36,7 @@ public class GameLifecycleService {
         Game game = lock(gameId);
 
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.WAITING)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
+        if (game.getStatus() != GameStatus.WAITING) throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
 
         playerService.assignRoles(gameId, game.getMafiaCount());
         game.setStatus(GameStatus.STARTED);
