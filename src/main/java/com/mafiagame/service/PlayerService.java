@@ -18,7 +18,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -66,13 +65,9 @@ public class PlayerService {
         UUID gameId = current.getGame().getId();
         UUID phaseId = current.getId();
 
-        if (!player.getGame().getId().equals(gameId)) {
-            throw new RuntimeException("Player belongs to another game");
-        }
+        if (!player.getGame().getId().equals(gameId)) throw new IllegalStateException("Player belongs to another game");
 
-        if (player.getStatus() != PlayerStatus.ALIVE) {
-            throw new RuntimeException("Player is already dead");
-        }
+        if (player.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Player is already dead");
 
         eliminations.save(new Elimination(current, player));
         player.setStatus(PlayerStatus.DEAD);
@@ -102,30 +97,16 @@ public class PlayerService {
     @Transactional
     public void assignRoles(UUID gameId, Integer configuredMafiaCount) {
         List<Player> roster = players.findByGameId(gameId);
-        if (roster.size() < MIN_PLAYERS) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Need at least " + MIN_PLAYERS + " players"
-            );
-        }
-        if (configuredMafiaCount == null
-                || configuredMafiaCount < 1
-                || 2L * configuredMafiaCount >= roster.size()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Mafia count must be at least 1 and fewer than the number of Civilians"
-            );
-        }
+        if (roster.size() < MIN_PLAYERS)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Need at least " + MIN_PLAYERS + " players");
+        if (configuredMafiaCount == null || configuredMafiaCount < 1 || 2L * configuredMafiaCount >= roster.size())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1 and fewer than the number of Civilians");
 
         Collections.shuffle(roster);
-        for (int i = 0; i < roster.size(); i++) {
+        for (int i = 0; i < roster.size(); i++)
             roster.get(i).setRole(i < configuredMafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
-        }
         players.saveAll(roster);
-        log.info(
-                "Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}",
-                gameId, roster.size(), configuredMafiaCount
-        );
+        log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, roster.size(), configuredMafiaCount);
     }
 
     public Player requireHost(UUID gameId, String rawSessionToken) {
@@ -136,27 +117,21 @@ public class PlayerService {
         Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
 
-        if (!requester.getGame().getId().equals(gameId)) {
+        if (!requester.getGame().getId().equals(gameId))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
-        }
-        if (!requester.isHost()) {
+        if (!requester.isHost())
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the host can manage this game");
-        }
 
         return requester;
     }
 
     public PlayerDetailsResponse getOwnDetails(UUID playerId, String rawSessionToken) {
-        if (rawSessionToken == null || rawSessionToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
-        }
+        if (rawSessionToken == null || rawSessionToken.isBlank()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
 
         Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
 
-        if (!requester.getId().equals(playerId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
-        }
+        if (!requester.getId().equals(playerId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
 
         return PlayerDetailsResponse.from(requester);
     }
