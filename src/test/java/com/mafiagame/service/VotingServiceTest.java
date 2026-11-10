@@ -167,7 +167,9 @@ class VotingServiceTests {
 
         service.castVote(phaseId, target.getId(), TOKEN);
 
-        verifyNoInteractions(broadcaster);
+        verify(broadcaster).toGameAfterCommit(eq(gameId), eq("VOTE_UPDATED"), any());
+        verify(broadcaster, never()).toGame(any(), any(), any());
+        verify(broadcaster, never()).toMafia(any(), any(), any());
     }
 
     @Test
@@ -186,8 +188,8 @@ class VotingServiceTests {
                 "voterId", voter.getId(),
                 "targetId", target.getId()
         );
-        verify(broadcaster).toGame(gameId, "VOTE_UPDATED", expected);
-        verify(broadcaster, never()).toMafia(any(), any(), any());
+        verify(broadcaster).toGameAfterCommit(gameId, "VOTE_UPDATED", expected);
+        verify(broadcaster, never()).toMafiaAfterCommit(any(), any(), any());
     }
 
     @Test
@@ -207,8 +209,8 @@ class VotingServiceTests {
                 "voterId", voter.getId(),
                 "targetId", target.getId()
         );
-        verify(broadcaster).toMafia(gameId, "VOTE_UPDATED", expected);
-        verify(broadcaster, never()).toGame(any(), any(), any());
+        verify(broadcaster).toMafiaAfterCommit(gameId, "VOTE_UPDATED", expected);
+        verify(broadcaster, never()).toGameAfterCommit(any(), any(), any());
     }
 
     @Test
