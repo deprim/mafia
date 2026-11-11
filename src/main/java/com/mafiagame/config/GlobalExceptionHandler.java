@@ -1,6 +1,5 @@
 package com.mafiagame.config;
 
-import com.mafiagame.client.ClientException;
 import com.mafiagame.dto.ValidationErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -11,16 +10,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-    @ExceptionHandler(ClientException.class)
-    public ProblemDetail handleClientException(ClientException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY,e.getMessage());
-    }
 
     @ExceptionHandler(UnsupportedOperationException.class)
     public ProblemDetail handleNotImplemented(UnsupportedOperationException ex) {
@@ -41,8 +34,6 @@ public class GlobalExceptionHandler {
                 "Validation error",
                 errors
         );
-
-
 
         return ResponseEntity.badRequest().body(response);
     }

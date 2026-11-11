@@ -127,14 +127,6 @@ public class GameService {
         );
     }
 
-    public GameResponse getGame(UUID id) {
-
-        Game game = gameRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
-
-        return GameResponse.from(game);
-
-    }
 
     /**
      * Retrieves the current state of the game room with the specified identifier.
@@ -174,23 +166,6 @@ public class GameService {
         );
     }
 
-    public GameResponse getGameByJoinCode(String joinCode) {
-        Game game = gameRepository.findByJoinCode(joinCode)
-                .orElseThrow(() -> new RuntimeException("Game with join code " + joinCode + " not found")); // TODO create exception if not found and use orElseThrow
-
-        return GameResponse.from(game);
-    }
-
-
-    @Transactional
-    public GameResponse updateGameSettings(UUID id, UpdateGameSettingsRequest request, String rawSessionToken) {
-
-        Game game = requireWaitingGameForHost(id, rawSessionToken);
-        log.info("Updating game settings for game {}, old mafiaCount = {}, new mafiaCount = {}", id, game.getMafiaCount(), request.mafiaCount());
-        game.setMafiaCount(request.mafiaCount());
-        return GameResponse.from(game);
-
-    }
 
     /**
      * Retrieves the result for the game with the specified identifier.
