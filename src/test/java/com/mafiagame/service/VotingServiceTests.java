@@ -38,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @DisplayName("VotingService")
@@ -100,7 +101,11 @@ class VotingServiceTests {
 
     /** Stubs the first two lookups of castVote: phase by id and game by phase's game id. */
     private void givenPhaseAndGame(PhaseType type) {
-        phase = new GamePhase(game, 1, type);
+        givenPhaseAndGame(type, 1);
+    }
+
+    private void givenPhaseAndGame(PhaseType type, int round) {
+        phase = new GamePhase(game, round, type);
         phase.setId(phaseId);
         when(phases.findById(phaseId)).thenReturn(Optional.of(phase));
         when(games.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
@@ -167,7 +172,17 @@ class VotingServiceTests {
 
         service.castVote(phaseId, target.getId(), TOKEN);
 
-        verify(broadcaster).toGameAfterCommit(eq(gameId), eq("VOTE_UPDATED"), any());
+        verify(broadcaster).toGameAndChatAfterCommit(
+                eq(gameId),
+                eq("VOTE_UPDATED"),
+                any(),
+                anyString()
+        );
+        verify(broadcaster).toGameAfterCommit(
+                gameId,
+                "VOTE_PROGRESS",
+                Map.of("phaseId", phaseId, "readyToAdvance", true)
+        );
         verify(broadcaster, never()).toGame(any(), any(), any());
         verify(broadcaster, never()).toMafia(any(), any(), any());
     }
@@ -188,7 +203,17 @@ class VotingServiceTests {
                 "voterId", voter.getId(),
                 "targetId", target.getId()
         );
-        verify(broadcaster).toGameAfterCommit(gameId, "VOTE_UPDATED", expected);
+        verify(broadcaster).toGameAndChatAfterCommit(
+                gameId,
+                "VOTE_UPDATED",
+                expected,
+                voter.getNickname() + " voted for " + target.getNickname() + "."
+        );
+        verify(broadcaster).toGameAfterCommit(
+                gameId,
+                "VOTE_PROGRESS",
+                Map.of("phaseId", phaseId, "readyToAdvance", true)
+        );
         verify(broadcaster, never()).toMafiaAfterCommit(any(), any(), any());
     }
 
@@ -196,7 +221,7 @@ class VotingServiceTests {
     @DisplayName("should broadcast vote to mafia only after commit when voting during NIGHT")
     void shouldBroadcastToMafiaAfterCommitOnNightVote() {
         voter = givenPlayer(game, PlayerRole.MAFIA, PlayerStatus.ALIVE);
-        givenPhaseAndGame(PhaseType.NIGHT);
+        givenPhaseAndGame(PhaseType.NIGHT, 2);
         when(players.findBySessionTokenHash(SessionTokenGenerator.hashToken(TOKEN))).thenReturn(Optional.of(voter));
         givenOpenPhaseAndTarget();
         when(votes.findByPhaseIdAndVoterId(phaseId, voter.getId())).thenReturn(Optional.empty());
@@ -210,7 +235,18 @@ class VotingServiceTests {
                 "targetId", target.getId()
         );
         verify(broadcaster).toMafiaAfterCommit(gameId, "VOTE_UPDATED", expected);
-        verify(broadcaster, never()).toGameAfterCommit(any(), any(), any());
+        verify(broadcaster).toGameAfterCommit(
+                gameId,
+                "VOTE_PROGRESS",
+                Map.of("phaseId", phaseId, "readyToAdvance", true)
+        );
+        verify(broadcaster, never()).toGameAndChatAfterCommit(
+                eq(gameId),
+                eq("VOTE_UPDATED"),
+                any(),
+                anyString()
+        );
+        verify(broadcaster, never()).toGameAfterCommit(eq(gameId), eq("VOTE_UPDATED"), any());
     }
 
     @Test
@@ -429,7 +465,7 @@ class VotingServiceTests {
     @Test
     @DisplayName("should throw FORBIDDEN on castVote when civilian votes during NIGHT")
     void shouldThrowForbiddenOnCastVoteWhenCivilianVotesAtNight() {
-        givenPhaseAndGame(PhaseType.NIGHT);
+        givenPhaseAndGame(PhaseType.NIGHT, 2);
         UUID targetId = target.getId();
         when(players.findBySessionTokenHash(SessionTokenGenerator.hashToken(TOKEN))).thenReturn(Optional.of(voter));
         givenOpenPhaseAndTarget();

@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -71,6 +72,12 @@ class GameLifecycleServiceTests {
         return phase;
     }
 
+    private GamePhase givenReadyPhase(PhaseType type, int round) {
+        GamePhase phase = givenCurrentPhase(type, round);
+        when(voting.allEligibleVotersHaveVoted(phase)).thenReturn(true);
+        return phase;
+    }
+
     private void givenAlive(long mafia, long civilians) {
         when(playerService.countAlive(gameId, PlayerRole.MAFIA)).thenReturn(mafia);
         when(playerService.countAlive(gameId, PlayerRole.CIVILIAN)).thenReturn(civilians);
@@ -84,7 +91,13 @@ class GameLifecycleServiceTests {
         verify(gameResultRepository).save(captor.capture());
         assertThat(captor.getValue().getWinningTeam()).isEqualTo(winner);   // adjust getter name if needed
 
-        verify(broadcaster).toGameAfterCommit(gameId, "GAME_ENDED", Map.of("winner", winner));
+        String winningTeam = winner == Team.MAFIA ? "Mafia" : "Civilian";
+        verify(broadcaster).toGameAndChatAfterCommit(
+                gameId,
+                "GAME_ENDED",
+                Map.of("winner", winner),
+                "The " + winningTeam + " team has won the game."
+        );
     }
 
     @Test
@@ -99,7 +112,12 @@ class GameLifecycleServiceTests {
         verify(playerService).requireHost(gameId, TOKEN);
         verify(playerService).assignRoles(gameId, game.getMafiaCount());
         verify(gameRepository).save(game);
-        verify(broadcaster).toGameAfterCommit(gameId, "GAME_STARTED", Map.of());
+        verify(broadcaster).toGameAndChatAfterCommit(
+                gameId,
+                "GAME_STARTED",
+                Map.of(),
+                "The game has started."
+        );
         verify(gamePhaseService).enterPhase(game, PhaseType.NIGHT, 1);
     }
 
@@ -187,14 +205,19 @@ class GameLifecycleServiceTests {
     void shouldKillVictimAndEnterDayAfterNight() {
         givenStartedGame();
         UUID victimId = UUID.randomUUID();
-        GamePhase night = givenCurrentPhase(PhaseType.NIGHT, 1);
+        GamePhase night = givenReadyPhase(PhaseType.NIGHT, 1);
         when(voting.closeVoting(night)).thenReturn(Optional.of(victimId));
         givenAlive(1, 3);
 
         service.advance(gameId, TOKEN, PhaseType.NIGHT, 1);
 
         verify(playerService).kill(victimId, night);
-        verify(broadcaster).toGameAfterCommit(eq(gameId), eq("VOTE_RESULT"), any(EliminationResult.class));
+        verify(broadcaster).toGameAndChatAfterCommit(
+                eq(gameId),
+                eq("VOTE_RESULT"),
+                any(EliminationResult.class),
+                anyString()
+        );
 
         InOrder order = inOrder(gamePhaseService);
         order.verify(gamePhaseService).endPhase(night);
@@ -208,14 +231,19 @@ class GameLifecycleServiceTests {
     @DisplayName("should not kill anyone after night on tie or no votes")
     void shouldNotKillAnyoneAfterNightWhenNoVictim() {
         givenStartedGame();
-        GamePhase night = givenCurrentPhase(PhaseType.NIGHT, 1);
+        GamePhase night = givenReadyPhase(PhaseType.NIGHT, 1);
         when(voting.closeVoting(night)).thenReturn(Optional.empty());
         givenAlive(1, 3);
 
         service.advance(gameId, TOKEN, PhaseType.NIGHT, 1);
 
         verify(playerService, never()).kill(any(), any());
-        verify(broadcaster).toGameAfterCommit(eq(gameId), eq("VOTE_RESULT"), any(EliminationResult.class));
+        verify(broadcaster).toGameAndChatAfterCommit(
+                eq(gameId),
+                eq("VOTE_RESULT"),
+                any(EliminationResult.class),
+                anyString()
+        );
         verify(gamePhaseService).enterPhase(game, PhaseType.DAY, 1);
     }
 
@@ -224,7 +252,7 @@ class GameLifecycleServiceTests {
     void shouldFinishGameWithMafiaWinAfterNight() {
         givenStartedGame();
         UUID victimId = UUID.randomUUID();
-        GamePhase night = givenCurrentPhase(PhaseType.NIGHT, 1);
+        GamePhase night = givenReadyPhase(PhaseType.NIGHT, 1);
         when(voting.closeVoting(night)).thenReturn(Optional.of(victimId));
         givenAlive(2, 2);
 
@@ -240,14 +268,19 @@ class GameLifecycleServiceTests {
     void shouldExecutePlayerAndEnterNextNightAfterDay() {
         givenStartedGame();
         UUID executedId = UUID.randomUUID();
-        GamePhase day = givenCurrentPhase(PhaseType.DAY, 2);
+        GamePhase day = givenReadyPhase(PhaseType.DAY, 2);
         when(voting.closeVoting(day)).thenReturn(Optional.of(executedId));
         givenAlive(1, 3);
 
         service.advance(gameId, TOKEN, PhaseType.DAY, 2);
 
         verify(playerService).kill(executedId, day);
-        verify(broadcaster).toGameAfterCommit(eq(gameId), eq("VOTE_RESULT"), any(EliminationResult.class));
+        verify(broadcaster).toGameAndChatAfterCommit(
+                eq(gameId),
+                eq("VOTE_RESULT"),
+                any(EliminationResult.class),
+                anyString()
+        );
 
         InOrder order = inOrder(gamePhaseService);
         order.verify(gamePhaseService).endPhase(day);
@@ -258,7 +291,7 @@ class GameLifecycleServiceTests {
     @DisplayName("should not execute anyone after day on tie or no votes")
     void shouldNotExecuteAnyoneAfterDayWhenNoVotes() {
         givenStartedGame();
-        GamePhase day = givenCurrentPhase(PhaseType.DAY, 1);
+        GamePhase day = givenReadyPhase(PhaseType.DAY, 1);
         when(voting.closeVoting(day)).thenReturn(Optional.empty());
         givenAlive(1, 3);
 
@@ -273,7 +306,7 @@ class GameLifecycleServiceTests {
     void shouldFinishGameWithCivilianWinAfterDay() {
         givenStartedGame();
         UUID executedId = UUID.randomUUID();
-        GamePhase day = givenCurrentPhase(PhaseType.DAY, 1);
+        GamePhase day = givenReadyPhase(PhaseType.DAY, 1);
         when(voting.closeVoting(day)).thenReturn(Optional.of(executedId));
         givenAlive(0, 3);
 
@@ -287,7 +320,7 @@ class GameLifecycleServiceTests {
     @DisplayName("should finish game with MAFIA win after day when mafia >= civilians")
     void shouldFinishGameWithMafiaWinAfterDay() {
         givenStartedGame();
-        GamePhase day = givenCurrentPhase(PhaseType.DAY, 1);
+        GamePhase day = givenReadyPhase(PhaseType.DAY, 1);
         when(voting.closeVoting(day)).thenReturn(Optional.empty());
         givenAlive(2, 2);
 

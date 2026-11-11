@@ -67,7 +67,12 @@ class GamePhaseServiceTests {
 
         InOrder order = inOrder(phases, broadcaster);
         order.verify(phases).save(any(GamePhase.class));
-        order.verify(broadcaster).toGameAfterCommit(gameId, "PHASE_CHANGED", Map.of("phase", PhaseType.NIGHT, "round", 2));
+        order.verify(broadcaster).toGameAndChatAfterCommit(
+                gameId,
+                "PHASE_CHANGED",
+                Map.of("phase", PhaseType.NIGHT, "round", 2),
+                "Night of round 2 has begun."
+        );
         order.verify(broadcaster).toMafiaAfterCommit(gameId, "START_NIGHT_VOTING", Map.of("round", 2));
 
         verifyNoMoreInteractions(broadcaster);
@@ -80,7 +85,12 @@ class GamePhaseServiceTests {
 
         InOrder order = inOrder(phases, broadcaster);
         order.verify(phases).save(any(GamePhase.class));
-        order.verify(broadcaster).toGameAfterCommit(gameId, "PHASE_CHANGED", Map.of("phase", PhaseType.DAY, "round", 2));
+        order.verify(broadcaster).toGameAndChatAfterCommit(
+                gameId,
+                "PHASE_CHANGED",
+                Map.of("phase", PhaseType.DAY, "round", 2),
+                "Day of round 2 has begun."
+        );
         order.verify(broadcaster).toGameAfterCommit(gameId, "START_DAY_VOTING", Map.of("round", 2));
 
         verifyNoMoreInteractions(broadcaster);
