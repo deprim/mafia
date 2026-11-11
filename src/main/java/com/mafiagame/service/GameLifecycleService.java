@@ -62,6 +62,12 @@ public class GameLifecycleService {
             log.debug("Ignoring stale advance for game {}", gameId);
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ignoring stale advance for game " + gameId);
         }
+        if (!voting.allEligibleVotersHaveVoted(current)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "All players eligible to vote must vote before the phase can advance"
+            );
+        }
 
         log.info("Advancing game {} to phase {} round {}", gameId, current.getPhaseType(), current.getRoundNumber());
         switch (current.getPhaseType()) {

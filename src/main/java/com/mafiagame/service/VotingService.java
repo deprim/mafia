@@ -1,5 +1,7 @@
 package com.mafiagame.service;
 
+import com.mafiagame.dto.VoteResponse;
+import com.mafiagame.dto.VoteStatusResponse;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -8,20 +10,20 @@ import com.mafiagame.repository.GamePhaseRepository;
 import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.repository.VoteRepository;
+import com.mafiagame.utils.enums.GamePhaseStatus;
 import com.mafiagame.utils.enums.GameStatus;
+import com.mafiagame.utils.enums.PhaseType;
+import com.mafiagame.utils.enums.PlayerRole;
 import com.mafiagame.utils.enums.PlayerStatus;
 import com.mafiagame.utils.enums.VotingType;
+import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.websocket.GameBroadcaster;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import com.mafiagame.dto.VoteResponse;
-import com.mafiagame.utils.SessionTokenGenerator;
-import com.mafiagame.utils.enums.GamePhaseStatus;
 import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import com.mafiagame.utils.enums.PhaseType;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -107,6 +109,51 @@ public class VotingService {
         return new VoteResponse(vote.getPhase().getId(), vote.getTarget().getId());
     }
 
+    @Transactional
+    public VoteStatusResponse getVoteStatus(UUID phaseId, String rawToken) {
+        Player viewer = requirePlayer(rawToken);
+        GamePhase phase = phases.findById(phaseId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found"));
+
+        if (!viewer.getGame().getId().equals(phase.getGame().getId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
+        if (phase.getStatus() != GamePhaseStatus.OPENED || phase.getGame().getStatus() != GameStatus.STARTED)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This phase is no longer open");
+
+        List<Player> eligibleVoters = eligibleVoters(phase);
+        List<UUID> eligibleVoterIds = eligibleVoters.stream()
+                .map(Player::getId)
+                .toList();
+        Set<UUID> submittedVoteIds = votes.findByPhaseId(phaseId).stream()
+                .map(vote -> vote.getVoter().getId())
+                .collect(Collectors.toSet());
+        boolean readyToAdvance = eligibleVoterIds.stream().allMatch(submittedVoteIds::contains);
+        boolean statusVisible = phase.getPhaseType() == PhaseType.DAY
+                || (phase.getPhaseType() == PhaseType.NIGHT
+                && phase.getRoundNumber() > 1
+                && viewer.getRole() == PlayerRole.MAFIA);
+        List<UUID> visibleEligibleVoterIds = statusVisible ? eligibleVoterIds : List.of();
+        List<UUID> visibleVotedPlayerIds = statusVisible
+                ? eligibleVoterIds.stream().filter(submittedVoteIds::contains).toList()
+                : List.of();
+
+        return new VoteStatusResponse(
+                phaseId,
+                visibleEligibleVoterIds,
+                visibleVotedPlayerIds,
+                statusVisible,
+                readyToAdvance
+        );
+    }
+
+    public boolean allEligibleVotersHaveVoted(GamePhase phase) {
+        Set<UUID> submittedVoteIds = votes.findByPhaseId(phase.getId()).stream()
+                .map(vote -> vote.getVoter().getId())
+                .collect(Collectors.toSet());
+        return eligibleVoters(phase).stream()
+                .allMatch(player -> submittedVoteIds.contains(player.getId()));
+    }
+
 
     /**
      * Determines the result of voting for the specified game phase by counting votes
@@ -120,6 +167,10 @@ public class VotingService {
      */
     @Transactional
     public Optional<UUID> closeVoting(GamePhase phase) {
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1) {
+            return Optional.empty();
+        }
+
         Map<UUID, Long> counts = votes.findByPhaseId(phase.getId()).stream()
                 .collect(Collectors.groupingBy(v -> v.getTarget().getId(), Collectors.counting()));
         if (counts.isEmpty()) return Optional.empty();
@@ -174,11 +225,27 @@ public class VotingService {
         if (voter.getId().equals(target.getId()))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot vote for yourself");
 
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Voting is unavailable on the first night");
+
         VotingType type = VotingType.forPhase(phase.getPhaseType())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Voting is unavailable in this phase"));
 
         if (!type.canVote(voter.getRole()))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot vote in this phase");
+    }
+
+    private List<Player> eligibleVoters(GamePhase phase) {
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1) {
+            return List.of();
+        }
+
+        VotingType type = VotingType.forPhase(phase.getPhaseType())
+                .orElseThrow(() -> new IllegalStateException("Voting is unavailable in this phase"));
+        return players.findByGameId(phase.getGame().getId()).stream()
+                .filter(player -> player.getStatus() == PlayerStatus.ALIVE)
+                .filter(player -> type.canVote(player.getRole()))
+                .toList();
     }
 
     /**
@@ -215,5 +282,13 @@ public class VotingService {
             );
             case NIGHT -> broadcaster.toMafiaAfterCommit(gameId, "VOTE_UPDATED", data);
         }
+        broadcaster.toGameAfterCommit(
+                gameId,
+                "VOTE_PROGRESS",
+                Map.of(
+                        "phaseId", phase.getId(),
+                        "readyToAdvance", allEligibleVotersHaveVoted(phase)
+                )
+        );
     }
 }

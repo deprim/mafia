@@ -1,6 +1,7 @@
 package com.mafiagame.service;
 
 import com.mafiagame.dto.PlayerDetailsResponse;
+import com.mafiagame.dto.PlayerResponse;
 import com.mafiagame.model.Elimination;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -133,7 +134,20 @@ public class PlayerService {
 
         if (!requester.getId().equals(playerId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
 
-        return PlayerDetailsResponse.from(requester);
+        List<PlayerResponse> mafiaTeammates = List.of();
+        if (requester.getRole() == PlayerRole.MAFIA) {
+            mafiaTeammates = players.findByGameId(requester.getGame().getId()).stream()
+                .filter(player -> player.getRole() == PlayerRole.MAFIA && !player.getId().equals(requester.getId()))
+                .map(player -> new PlayerResponse(
+                        player.getId(),
+                        player.getNickname(),
+                        player.isHost(),
+                        player.getStatus()
+                ))
+                .toList();
+        }
+
+        return PlayerDetailsResponse.from(requester, mafiaTeammates);
     }
 
 }
