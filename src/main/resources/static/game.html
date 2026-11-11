@@ -3,54 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Live room demo</title>
+    <title>Mafia Game Room</title>
     <link rel="stylesheet" href="/vendor/bootstrap/5.3.8/css/bootstrap.min.css">
 </head>
-<body>
-<main class="container py-4">
-    <h1>Live room demo</h1>
-    <p id="connection-status" role="status">Connecting…</p>
-    <p id="room-details"></p>
-    <p>Invite a guest with this link: <a id="invite-link"></a></p>
-    <section id="lobby-view" hidden>
-        <h2>Lobby</h2>
-        <p>Waiting for the host to start the game.</p>
-        <h3>Participants</h3>
-        <p id="empty-roster">Loading participants…</p>
-        <ul id="participant-list" class="list-group mb-3" aria-live="polite"></ul>
-        <button id="start-game" class="btn btn-primary" type="button" hidden>Start game</button>
-        <p id="start-feedback" role="status" aria-live="polite"></p>
+<body class="bg-body-tertiary">
+<main class="container py-4 py-lg-5">
+    <header class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+        <div>
+            <p class="small fw-semibold text-primary text-uppercase mb-2">Mafia · Multiplayer</p>
+            <h1 class="display-6 fw-bold mb-1">Mafia Game Room</h1>
+            <p class="text-body-secondary mb-0">Follow the game, cast your vote, and keep your team in play.</p>
+        </div>
+        <div class="d-flex flex-column align-items-md-end gap-2">
+            <p id="connection-status" class="small mb-0 text-body-secondary" role="status" aria-live="polite">Connecting…</p>
+            <p id="room-details" class="small text-body-secondary text-md-end mb-0"></p>
+        </div>
+    </header>
+
+    <section class="card border-0 shadow-sm mb-4" aria-labelledby="invite-heading">
+        <div class="card-body d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+            <div>
+                <h2 id="invite-heading" class="h6 fw-semibold mb-1">Invite players</h2>
+                <p class="small text-body-secondary mb-0">Share this room link with the rest of your group.</p>
+            </div>
+            <div class="d-flex flex-column flex-sm-row gap-2">
+                <a id="invite-link" class="btn btn-sm btn-outline-primary text-break"></a>
+                <button id="copy-invite-link" class="btn btn-sm btn-success" type="button" disabled>Copy</button>
+                <span id="invite-copy-feedback" class="visually-hidden" role="status" aria-live="polite"></span>
+            </div>
+        </div>
     </section>
-    <section id="game-view" hidden>
-        <h2>Game</h2>
-        <p id="game-status" role="status" aria-live="polite"></p>
-        <p id="game-phase"></p>
-        <p><strong>Your role:</strong> <span id="player-role">Loading…</span></p>
-        <p><strong>Your status:</strong> <span id="player-status">Loading…</span></p>
-        <section id="voting-panel" hidden>
-            <h3>Voting</h3>
-            <p id="voting-feedback" role="status" aria-live="polite"></p>
-            <form id="vote-form">
-                <label for="vote-target">Living player</label><br>
-                <select id="vote-target" class="form-select" required disabled>
-                    <option value="">No available targets</option>
-                </select>
-                <button id="submit-vote" class="btn btn-primary mt-2" type="submit" disabled>Submit vote</button>
-            </form>
-        </section>
-        <button id="advance-phase" class="btn btn-warning" type="button" hidden>Advance phase</button>
-        <p id="advance-feedback" role="status" aria-live="polite"></p>
-        <section id="result-view" hidden>
-            <h3>Game result</h3>
-            <p id="winning-team" role="status" aria-live="polite"></p>
-        </section>
+
+    <section id="lobby-view" class="card border-0 shadow-sm mb-4" aria-labelledby="lobby-heading" hidden>
+        <div class="card-header bg-white border-0 px-4 pt-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                    <p class="small fw-semibold text-body-secondary text-uppercase mb-1">Room setup</p>
+                    <h2 id="lobby-heading" class="h4 mb-0">Lobby</h2>
+                </div>
+                <span class="badge rounded-pill text-bg-secondary">Waiting for the host</span>
+            </div>
+        </div>
+        <div class="card-body px-4">
+            <p class="text-body-secondary">Participants are listed below. The host can start once everyone has joined.</p>
+            <h3 class="h6 fw-semibold">Participants</h3>
+            <p id="empty-roster" class="small text-body-secondary">Loading participants…</p>
+            <ul id="participant-list" class="list-group border rounded-3 overflow-hidden mb-4" aria-live="polite"></ul>
+            <div class="d-flex flex-wrap gap-2">
+                <button id="start-game" class="btn btn-primary" type="button" hidden>Start game</button>
+                <button id="cancel-room" class="btn btn-outline-danger" type="button" hidden>Cancel room</button>
+            </div>
+            <p id="start-feedback" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
+        </div>
     </section>
-    <p><a href="/">Create or join another room</a></p>
-    <button id="cancel-room" type="button" hidden>Cancel waiting room</button>
+
+    <section id="game-view" class="card border-0 shadow-sm mb-4" aria-labelledby="game-heading" hidden>
+        <div class="card-header bg-white border-0 px-4 pt-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                    <p class="small fw-semibold text-body-secondary text-uppercase mb-1">Live game</p>
+                    <h2 id="game-heading" class="h4 mb-0">Game overview</h2>
+                </div>
+                <p id="game-status" class="badge rounded-pill text-bg-secondary mb-0" role="status" aria-live="polite"></p>
+            </div>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                        <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Current phase</p>
+                        <p id="game-phase" class="h5 mb-0"></p>
+                    </div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                        <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Your role</p>
+                        <p class="mb-0"><span id="player-role" class="badge rounded-pill text-bg-secondary">Loading…</span></p>
+                    </div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                        <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Your status</p>
+                        <p class="mb-0"><span id="player-status" class="badge rounded-pill text-bg-secondary">Loading…</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <section id="voting-panel" class="card border-0 bg-body-tertiary mt-4" aria-labelledby="voting-heading" hidden>
+                <div class="card-body p-3 p-md-4">
+                    <h3 id="voting-heading" class="h5 mb-2">Voting</h3>
+                    <p id="voting-feedback" class="small text-body-secondary mb-3" role="status" aria-live="polite"></p>
+                    <form id="vote-form">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-12 col-md">
+                                <label for="vote-target" class="form-label">Choose a living player</label>
+                                <select id="vote-target" class="form-select" required disabled>
+                                    <option value="">No available targets</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-auto">
+                                <button id="submit-vote" class="btn btn-primary w-100" type="submit" disabled>Submit vote</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 mt-4">
+                <button id="advance-phase" class="btn btn-outline-primary" type="button" hidden>Advance phase</button>
+                <p id="advance-feedback" class="small mb-0" role="status" aria-live="polite"></p>
+            </div>
+            <section id="result-view" class="alert alert-primary border-0 mt-4 mb-0" aria-labelledby="result-heading" hidden>
+                <h3 id="result-heading" class="alert-heading h5">Game complete</h3>
+                <p id="winning-team" class="mb-0" role="status" aria-live="polite"></p>
+            </section>
+        </div>
+    </section>
 
     <section>
         <h2>WebSocket chat</h2>
-        <ul id="messages" aria-live="polite"></ul>
+        <ul id="messages" class="list-group list-group-flush mb-3" aria-live="polite"></ul>
         <form id="chat-form">
             <label for="chat-message">Message</label><br>
             <input id="chat-message" maxlength="300" required>
@@ -58,15 +130,6 @@
         </form>
     </section>
 
-    <section>
-        <h2>GameBroadcaster check</h2>
-        <p>Send a server-side event to everyone subscribed to this room.</p>
-        <form id="broadcast-form">
-            <label for="broadcast-text">Event text</label><br>
-            <input id="broadcast-text" maxlength="300" required>
-            <button id="send-broadcast" type="submit">Broadcast event</button>
-        </form>
-    </section>
 </main>
 <script src="/vendor/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
@@ -79,6 +142,9 @@
     let isHost = false;
     const status = document.getElementById("connection-status");
     const roomDetails = document.getElementById("room-details");
+    const inviteLink = document.getElementById("invite-link");
+    const copyInviteButton = document.getElementById("copy-invite-link");
+    const inviteCopyFeedback = document.getElementById("invite-copy-feedback");
     const lobbyView = document.getElementById("lobby-view");
     const gameView = document.getElementById("game-view");
     const participantList = document.getElementById("participant-list");
@@ -113,26 +179,35 @@
     let myVoteTargetId = null;
     let submittingVote = false;
     let advancingPhase = false;
+    let copyFeedbackTimeout = null;
     let client;
 
     function showStatus(text, isError = false) {
         status.textContent = text;
-        status.className = isError ? "text-danger" : "";
+        status.className = isError
+            ? "small mb-0 text-danger"
+            : "small mb-0 text-body-secondary";
     }
 
     function showStartFeedback(text, isError = false) {
         startFeedback.textContent = text;
-        startFeedback.className = isError ? "text-danger" : "";
+        startFeedback.className = isError
+            ? "small mt-3 mb-0 text-danger"
+            : "small mt-3 mb-0 text-body-secondary";
     }
 
     function showVotingFeedback(text, isError = false) {
         votingFeedback.textContent = text;
-        votingFeedback.className = isError ? "text-danger" : "";
+        votingFeedback.className = isError
+            ? "small mb-3 text-danger"
+            : "small mb-3 text-body-secondary";
     }
 
     function showAdvanceFeedback(text, isError = false) {
         advanceFeedback.textContent = text;
-        advanceFeedback.className = isError ? "text-danger" : "";
+        advanceFeedback.className = isError
+            ? "small mb-0 text-danger"
+            : "small mb-0 text-body-secondary";
     }
 
     async function responseErrorMessage(response, fallback) {
@@ -281,7 +356,7 @@
 
         for (const player of roster) {
             const item = document.createElement("li");
-            item.className = "list-group-item d-flex justify-content-between align-items-center";
+            item.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
 
             const name = document.createElement("span");
             name.textContent = player.nickname;
@@ -334,6 +409,11 @@
             : nextStatus === "FINISHED"
                 ? "The game has finished."
                 : "";
+        gameStatusText.className = nextStatus === "STARTED"
+            ? "badge rounded-pill text-bg-success mb-0"
+            : nextStatus === "FINISHED"
+                ? "badge rounded-pill text-bg-dark mb-0"
+                : "badge rounded-pill text-bg-secondary mb-0";
         updateRoomDetails();
         updateRoomControls();
         updateGameControls();
@@ -352,16 +432,24 @@
         if (ownPlayerDetails && ownPlayerDetails.role) {
             const role = ownPlayerDetails.role.toLowerCase();
             playerRoleText.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+            playerRoleText.className = ownPlayerDetails.role === "MAFIA"
+                ? "badge rounded-pill text-bg-danger"
+                : "badge rounded-pill text-bg-primary";
         } else {
             playerRoleText.textContent = gameStatus === "WAITING"
                 ? "Assigned when the game starts."
                 : "Loading role…";
+            playerRoleText.className = "badge rounded-pill text-bg-secondary";
         }
         if (ownPlayerDetails && ownPlayerDetails.status) {
             const playerStatus = ownPlayerDetails.status.toLowerCase();
             playerStatusText.textContent = playerStatus.charAt(0).toUpperCase() + playerStatus.slice(1);
+            playerStatusText.className = ownPlayerDetails.status === "ALIVE"
+                ? "badge rounded-pill text-bg-success"
+                : "badge rounded-pill text-bg-danger";
         } else {
             playerStatusText.textContent = "Loading…";
+            playerStatusText.className = "badge rounded-pill text-bg-secondary";
         }
     }
 
@@ -522,12 +610,6 @@
         applyGameState(await response.json());
     }
 
-    function appendMessage(text) {
-        const item = document.createElement("li");
-        item.textContent = text;
-        messages.append(item);
-    }
-
     function appendChatMessage(message) {
         const eventId = String(message.id);
         if (seenEventIds.has(eventId)) {
@@ -538,15 +620,44 @@
         const time = message.createdAt
             ? `${new Date(message.createdAt).toLocaleTimeString()} `
             : "";
-        appendMessage(`${time}${message.username}: ${message.message}`);
+        const item = document.createElement("li");
+        if (message.system) {
+            item.className = "list-group-item list-group-item-warning";
+            if (time) {
+                const timestamp = document.createElement("span");
+                timestamp.className = "small text-body-secondary me-2";
+                timestamp.textContent = time.trim();
+                item.append(timestamp);
+            }
+            const label = document.createElement("span");
+            label.className = "badge text-bg-warning me-2";
+            label.textContent = "Game";
+            item.append(label);
+
+            const text = document.createElement("strong");
+            text.className = "fw-bold";
+            text.textContent = message.message;
+            item.append(text);
+        } else {
+            item.className = "list-group-item";
+            if (time) {
+                const timestamp = document.createElement("span");
+                timestamp.className = "small text-body-secondary me-2";
+                timestamp.textContent = time.trim();
+                item.append(timestamp);
+            }
+            const username = document.createElement("strong");
+            username.className = "fw-bold";
+            username.textContent = `${message.username}:`;
+            item.append(username, document.createTextNode(` ${message.message}`));
+        }
+        messages.append(item);
     }
 
     function appendEvent(event) {
         if (event.type === "CHAT") {
             appendChatMessage(event.data);
-            return;
         }
-        appendMessage(`[${event.type}] ${typeof event.data === "string" ? event.data : JSON.stringify(event.data)}`);
     }
 
     function clearRoomSession() {
@@ -583,9 +694,9 @@
         showStatus("This demo tab has no room session. Create or join a room first.", true);
     } else {
         updateRoomDetails();
-        const inviteLink = document.getElementById("invite-link");
         inviteLink.href = `${window.location.origin}/?join=${encodeURIComponent(joinCode)}`;
         inviteLink.textContent = inviteLink.href;
+        copyInviteButton.disabled = false;
         loadRoomState().catch(error => showStatus(error.message, true));
 
         client = new StompJs.Client({
@@ -643,6 +754,37 @@
         });
         client.activate();
     }
+
+    copyInviteButton.addEventListener("click", async () => {
+        if (!inviteLink.href || copyInviteButton.disabled) {
+            return;
+        }
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+            const message = "Clipboard access is unavailable. Copy the invite link directly instead.";
+            inviteCopyFeedback.textContent = message;
+            showStatus(message, true);
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(inviteLink.href);
+            copyInviteButton.textContent = "Copied!";
+            inviteCopyFeedback.textContent = "Invite link copied to the clipboard.";
+            if (copyFeedbackTimeout !== null) {
+                window.clearTimeout(copyFeedbackTimeout);
+            }
+            copyFeedbackTimeout = window.setTimeout(() => {
+                copyInviteButton.textContent = "Copy";
+                inviteCopyFeedback.textContent = "";
+                copyFeedbackTimeout = null;
+            }, 2000);
+        } catch (error) {
+            const detail = error && error.message ? ` ${error.message}` : "";
+            const message = `Could not copy the invite link.${detail}`;
+            inviteCopyFeedback.textContent = message;
+            showStatus(message, true);
+        }
+    });
 
     voteTargetSelect.addEventListener("change", renderVotingControls);
 
@@ -813,31 +955,6 @@
         input.value = "";
     });
 
-    document.getElementById("broadcast-form").addEventListener("submit", async event => {
-        event.preventDefault();
-        const input = document.getElementById("broadcast-text");
-        const text = input.value.trim();
-        if (!gameId || !token || !text) {
-            return;
-        }
-        try {
-            const response = await fetch(`/api/example/${encodeURIComponent(gameId)}/all`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Session-Token": token
-                },
-                body: JSON.stringify({ text })
-            });
-            if (!response.ok) {
-                const errorBody = await response.json();
-                throw new Error(errorBody.detail || `Broadcast failed (${response.status}).`);
-            }
-            input.value = "";
-        } catch (error) {
-            showStatus(error.message, true);
-        }
-    });
 </script>
 </body>
 </html>

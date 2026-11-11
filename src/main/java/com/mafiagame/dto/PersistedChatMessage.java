@@ -6,6 +6,7 @@ public record PersistedChatMessage(
         Long id,
         Instant createdAt,
         String message,
-        String username
+        String username,
+        boolean system
 ) {
 }

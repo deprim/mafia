@@ -33,6 +33,7 @@ public class GameService {
     private final GameResultRepository gameResultRepository;
     private final GamePhaseService gamePhaseService;
     private final GameBroadcaster broadcaster;
+    private final ChatHistoryService chatHistory;
 
     @Autowired
     public GameService(
@@ -40,13 +41,15 @@ public class GameService {
             PlayerRepository playerRepository,
             GameResultRepository gameResultRepository,
             GamePhaseService gamePhaseService,
-            GameBroadcaster broadcaster
+            GameBroadcaster broadcaster,
+            ChatHistoryService chatHistory
     ) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.gameResultRepository = gameResultRepository;
         this.gamePhaseService = gamePhaseService;
         this.broadcaster = broadcaster;
+        this.chatHistory = chatHistory;
     }
 
 
@@ -71,6 +74,7 @@ public class GameService {
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
 
         playerRepository.save(player);
+        chatHistory.saveSystemMessage(game.getId(), nickname + " created the room.");
         log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
 
@@ -118,7 +122,12 @@ public class GameService {
                 player.isHost(),
                 player.getStatus()
         );
-        broadcaster.toGameAfterCommit(game.getId(), "PLAYER_JOINED", playerResponse);
+        broadcaster.toGameAndChatAfterCommit(
+                game.getId(),
+                "PLAYER_JOINED",
+                playerResponse,
+                playerResponse.nickname() + " joined the room."
+        );
 
         return new PlayerJoinResult(
                 game.getId(),

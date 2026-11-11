@@ -78,13 +78,16 @@ public class VotingService {
 
         validateVote(phase, voter, target);
 
-        Vote vote = votes.findByPhaseIdAndVoterId(phaseId, voter.getId())
-                .orElseGet(() -> new Vote(phase, voter, target));
+        Optional<Vote> existingVote = votes.findByPhaseIdAndVoterId(phaseId, voter.getId());
+        boolean changedVote = existingVote
+                .map(vote -> !vote.getTarget().getId().equals(target.getId()))
+                .orElse(false);
+        Vote vote = existingVote.orElseGet(() -> new Vote(phase, voter, target));
 
         vote.setTarget(target);
         votes.saveAndFlush(vote);
 
-        publishVoteAfterCommit(phase, voter, target);
+        publishVoteAfterCommit(phase, voter, target, changedVote);
     }
 
     /**
@@ -190,7 +193,7 @@ public class VotingService {
      * @param voter the player who cast the vote
      * @param target the player selected as the vote target
      */
-    private void publishVoteAfterCommit(GamePhase phase, Player voter, Player target) {
+    private void publishVoteAfterCommit(GamePhase phase, Player voter, Player target, boolean changedVote) {
         UUID gameId = phase.getGame().getId();
         PhaseType phaseType = phase.getPhaseType();
 
@@ -201,7 +204,15 @@ public class VotingService {
         );
 
         switch (phaseType) {
-            case DAY -> broadcaster.toGameAfterCommit(gameId, "VOTE_UPDATED", data);
+            case DAY -> broadcaster.toGameAndChatAfterCommit(
+                    gameId,
+                    "VOTE_UPDATED",
+                    data,
+                    voter.getNickname()
+                            + (changedVote ? " changed their vote to " : " voted for ")
+                            + target.getNickname()
+                            + "."
+            );
             case NIGHT -> broadcaster.toMafiaAfterCommit(gameId, "VOTE_UPDATED", data);
         }
     }

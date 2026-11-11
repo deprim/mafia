@@ -86,7 +86,7 @@
         sessionStorage.setItem("mafiaDemoNickname", nickname);
         sessionStorage.setItem("mafiaDemoSessionToken", token);
         sessionStorage.setItem("mafiaDemoIsHost", String(host));
-        window.location.href = "/websocket-example.html?gameId=" + encodeURIComponent(gameId);
+        window.location.href = "/game.html?gameId=" + encodeURIComponent(gameId);
     }
 
     document.getElementById("create-form").addEventListener("submit", async event => {

@@ -1,4 +1,7 @@
 package com.mafiagame.dto;
 
-public record ChatMessage (String message, String username) {
+public record ChatMessage(
+        String message,
+        String username
+) {
 }
