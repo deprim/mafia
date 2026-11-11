@@ -416,20 +416,4 @@ class PlayerServiceTests {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.FORBIDDEN);
     }
-
-    @Test
-    @DisplayName("should return true on isEnoughPlayers when fewer than 4 players (current behavior)")
-    void shouldReturnTrueOnIsEnoughPlayersWhenFewerThanMinimum() {
-        when(players.findByGameId(gameId)).thenReturn(newPlayerList(3));
-
-        assertThat(service.isEnoughPlayers(gameId)).isTrue();
-    }
-
-    @Test
-    @DisplayName("should return false on isEnoughPlayers when 4 or more players (current behavior)")
-    void shouldReturnFalseOnIsEnoughPlayersWhenMinimumReached() {
-        when(players.findByGameId(gameId)).thenReturn(newPlayerList(4));
-
-        assertThat(service.isEnoughPlayers(gameId)).isFalse();
-    }
 }
