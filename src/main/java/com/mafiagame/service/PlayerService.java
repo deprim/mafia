@@ -161,8 +161,4 @@ public class PlayerService {
         return PlayerDetailsResponse.from(requester);
     }
 
-    public boolean isEnoughPlayers(UUID gameId) {
-        List<Player> list = players.findByGameId(gameId);
-        return  list.size() < MIN_PLAYERS;
-    }
 }
