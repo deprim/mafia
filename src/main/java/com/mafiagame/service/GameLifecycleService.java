@@ -31,14 +31,12 @@ public class GameLifecycleService {
     private final VotingService voting;
     private final GameResultRepository gameResultRepository;
 
-
     @Transactional
     public void startGame(UUID gameId, String rawSessionToken) {
         Game game = lock(gameId);
 
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.WAITING)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
+        if (game.getStatus() != GameStatus.WAITING) throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
 
         playerService.assignRoles(gameId, game.getMafiaCount());
         game.setStatus(GameStatus.STARTED);
@@ -57,20 +55,19 @@ public class GameLifecycleService {
     public void advance(UUID gameId, String rawSessionToken, PhaseType expectedType, int expectedRound) {
         Game game = lock(gameId);
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.STARTED) return;   // WAITING or FINISHED: nothing to advance
+        if (game.getStatus() != GameStatus.STARTED) throw new ResponseStatusException(HttpStatus.CONFLICT, "Game has not active status: " + game.getStatus());   // WAITING or FINISHED: nothing to advance
 
         GamePhase current = gamePhaseService.currentPhase(game);
         if (current.getPhaseType() != expectedType || current.getRoundNumber() != expectedRound) {
             log.debug("Ignoring stale advance for game {}", gameId);
-            return;
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ignoring stale advance for game " + gameId);
         }
 
         log.info("Advancing game {} to phase {} round {}", gameId, current.getPhaseType(), current.getRoundNumber());
         switch (current.getPhaseType()) {
             case NIGHT -> resolveNight(game, current);
             case DAY -> resolveDay(game, current);
-            default -> {
-            }
+            default -> throw new IllegalStateException("Unexpected value: " + current.getPhaseType());
         }
     }
 
@@ -121,10 +118,8 @@ public class GameLifecycleService {
         UUID executedId = voting.closeVoting(current).orElse(null);   // null = no votes or a tie, nobody dies
         log.debug("Phase {} hase no elimination in game with ID {}", current.getPhaseType(), game.getId());
 
-
         EliminationResult result = new EliminationResult(executedId == null ? null : playerService.kill(executedId, current));
         broadcaster.toGameAfterCommit(game.getId(), "VOTE_RESULT", result);
-
         gamePhaseService.endPhase(current);
 
         //execute validation of the game finishing conditions and do not generate next phase
@@ -132,7 +127,6 @@ public class GameLifecycleService {
 
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, current.getRoundNumber() + 1);   // the new round starts with night
     }
-
 
     /**
      * Checks whether the specified game has reached a winning condition and finishes it if so.
@@ -157,11 +151,8 @@ public class GameLifecycleService {
         return false;
     }
 
-
     private void endGame(Game game, Team winner) {
-        if (game.getStatus() == GameStatus.FINISHED) {
-            return;
-        }
+        if (game.getStatus() == GameStatus.FINISHED) return;
 
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
