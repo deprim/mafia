@@ -47,10 +47,6 @@
                             <label for="host-nickname" class="form-label fw-semibold">Your nickname</label>
                             <input id="host-nickname" class="form-control" maxlength="40" autocomplete="nickname" placeholder="Enter your nickname" required>
                         </div>
-                        <div class="mb-4">
-                            <label for="mafia-count" class="form-label fw-semibold">Number of Mafia</label>
-                            <input id="mafia-count" class="form-control" type="number" min="1" value="1" required>
-                        </div>
                         <button class="btn btn-primary w-100" type="submit">Create room</button>
                     </form>
                 </div>
@@ -110,9 +106,8 @@
         event.preventDefault();
         showMessage("");
         const nickname = document.getElementById("host-nickname").value.trim();
-        const mafiaCount = Number(document.getElementById("mafia-count").value);
         try {
-            const result = await submitJson("/api/games", { nickname, mafiaCount });
+            const result = await submitJson("/api/games", { nickname });
             openRoom(result.body.id, result.body.joinCode, nickname, result.token, true);
         } catch (error) {
             showMessage(error.message, true);

@@ -6,14 +6,31 @@
     <title>Mafia Game Room</title>
     <link rel="stylesheet" href="/vendor/bootstrap/5.3.8/css/bootstrap.min.css">
     <style>
+        .game-chat-panel {
+            height: 100%;
+            min-height: 0;
+        }
+
+        .game-chat-panel > .card-body {
+            min-height: 0;
+            overflow: hidden;
+        }
+
         .game-chat-message-list {
+            flex: 1 1 0;
             min-height: 0;
             overflow-y: auto;
         }
 
+        #chat-form {
+            flex: 0 0 auto;
+        }
+
         @media (max-width: 991.98px) {
             .game-chat-panel {
+                height: 24rem;
                 min-height: 24rem;
+                max-height: 24rem;
             }
         }
     </style>
@@ -63,10 +80,26 @@
                     <h3 class="h6 fw-semibold">Participants</h3>
                     <p id="empty-roster" class="small text-body-secondary">Loading participants…</p>
                     <ul id="participant-list" class="list-group border rounded-3 overflow-hidden mb-4" aria-live="polite"></ul>
+                    <section id="mafia-settings" class="rounded-3 bg-body-tertiary p-3 mb-4" aria-labelledby="mafia-settings-heading" hidden>
+                        <h3 id="mafia-settings-heading" class="h6 fw-semibold mb-2">Game settings</h3>
+                        <p class="small text-body-secondary">Choose a Mafia count that leaves at least one more civilian than Mafia.</p>
+                        <form id="mafia-settings-form" class="row g-3 align-items-end">
+                            <div class="col-12 col-sm">
+                                <label for="mafia-count" class="form-label fw-semibold">Number of Mafia</label>
+                                <input id="mafia-count" class="form-control" type="number" min="1" value="1" required>
+                                <div id="mafia-count-help" class="form-text"></div>
+                            </div>
+                            <div class="col-12 col-sm-auto">
+                                <button id="save-mafia-count" class="btn btn-outline-primary w-100" type="submit" disabled>Save Mafia count</button>
+                            </div>
+                        </form>
+                        <p id="mafia-settings-feedback" class="small mt-2 mb-0" role="status" aria-live="polite"></p>
+                    </section>
                     <div class="d-flex flex-wrap gap-2">
                         <button id="start-game" class="btn btn-primary" type="button" hidden>Start game</button>
                         <button id="cancel-room" class="btn btn-outline-danger" type="button" hidden>Cancel room</button>
                     </div>
+                    <p id="start-readiness" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
                     <p id="start-feedback" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
                 </div>
             </section>
@@ -154,8 +187,7 @@
         <div class="col-12 col-lg-4 d-flex">
             <section class="card border-0 shadow-sm d-flex flex-column flex-fill h-100 game-chat-panel" aria-labelledby="chat-heading">
                 <div class="card-header bg-white border-0 px-4 pt-4">
-                    <p class="small fw-semibold text-body-secondary text-uppercase mb-1">Room conversation</p>
-                    <h2 id="chat-heading" class="h4 mb-0">WebSocket Chat</h2>
+                    <h2 id="chat-heading" class="h4 mb-0">Room Conversation</h2>
                 </div>
                 <div class="card-body d-flex flex-column flex-grow-1 gap-3 p-4">
                     <ul id="messages" class="list-group list-group-flush flex-grow-1 game-chat-message-list" aria-live="polite"></ul>
@@ -196,7 +228,14 @@
     const emptyRoster = document.getElementById("empty-roster");
     const startGameButton = document.getElementById("start-game");
     const startFeedback = document.getElementById("start-feedback");
+    const startReadinessText = document.getElementById("start-readiness");
     const cancelRoom = document.getElementById("cancel-room");
+    const mafiaSettings = document.getElementById("mafia-settings");
+    const mafiaSettingsForm = document.getElementById("mafia-settings-form");
+    const mafiaCountInput = document.getElementById("mafia-count");
+    const mafiaCountHelp = document.getElementById("mafia-count-help");
+    const saveMafiaCountButton = document.getElementById("save-mafia-count");
+    const mafiaSettingsFeedback = document.getElementById("mafia-settings-feedback");
     const gameStatusText = document.getElementById("game-status");
     const gamePhaseText = document.getElementById("game-phase");
     const playerRoleText = document.getElementById("player-role");
@@ -214,9 +253,12 @@
     const seenEventIds = new Set();
     const participants = new Map();
     const gameStatusOrder = { WAITING: 0, STARTED: 1, FINISHED: 2 };
+    const MIN_PLAYERS = 4;
     let gameStatus = null;
     let mafiaCount = null;
     let startingGame = false;
+    let savingMafiaCount = false;
+    let mafiaSettingsDirty = false;
     let ownPlayerDetails = null;
     let ownDetailsRequest = null;
     let currentPhase = null;
@@ -244,6 +286,13 @@
         startFeedback.className = isError
             ? "small mt-3 mb-0 text-danger"
             : "small mt-3 mb-0 text-body-secondary";
+    }
+
+    function showMafiaSettingsFeedback(text, isError = false) {
+        mafiaSettingsFeedback.textContent = text;
+        mafiaSettingsFeedback.className = isError
+            ? "small mt-2 mb-0 text-danger"
+            : "small mt-2 mb-0 text-body-secondary";
     }
 
     function showVotingFeedback(text, isError = false) {
@@ -290,10 +339,61 @@
         roomDetails.textContent = `Room ${joinCode}${statusText}${mafiaText} · You are ${nickname}`;
     }
 
+    function maximumMafiaCount(playerCount = participants.size) {
+        return Math.max(0, Math.floor((playerCount - 1) / 2));
+    }
+
+    function getStartConfigurationError() {
+        if (participants.size < MIN_PLAYERS) {
+            return `At least ${MIN_PLAYERS} players are required to start (${participants.size} joined).`;
+        }
+
+        const selectedMafiaCount = mafiaSettingsDirty
+            ? Number(mafiaCountInput.value)
+            : mafiaCount;
+        if (!Number.isInteger(selectedMafiaCount) || selectedMafiaCount < 1) {
+            return "Mafia count must be at least 1.";
+        }
+
+        const maximum = maximumMafiaCount();
+        if (selectedMafiaCount > maximum) {
+            return `With ${participants.size} players, the maximum is ${maximum} Mafia; there must be at least one more civilian than Mafia.`;
+        }
+        if (mafiaSettingsDirty) {
+            return "Save the Mafia count before starting the game.";
+        }
+        return null;
+    }
+
     function updateRoomControls() {
         const waiting = gameStatus === "WAITING";
+        const canManageRoom = isHost && waiting;
+        const maximum = maximumMafiaCount();
+        const selectedMafiaCount = Number(mafiaCountInput.value);
+        const validMafiaCount = mafiaCountInput.value.trim() !== ""
+            && Number.isInteger(selectedMafiaCount)
+            && selectedMafiaCount >= 1
+            && selectedMafiaCount <= maximum;
+
+        mafiaSettings.hidden = !canManageRoom;
+        mafiaCountInput.max = String(maximum);
+        mafiaCountInput.disabled = !canManageRoom || savingMafiaCount || maximum < 1;
+        mafiaCountHelp.textContent = maximum > 0
+            ? `Maximum with ${participants.size} players: ${maximum}. Keep at least one more civilian than Mafia.`
+            : "At least three players are needed before a Mafia count can be configured.";
+        saveMafiaCountButton.disabled = !canManageRoom
+            || savingMafiaCount
+            || !mafiaSettingsDirty
+            || !validMafiaCount;
+        saveMafiaCountButton.textContent = savingMafiaCount ? "Saving…" : "Save Mafia count";
+
+        const startError = getStartConfigurationError();
+        startReadinessText.textContent = startError || "The game is ready to start.";
+        startReadinessText.className = startError
+            ? "small mt-3 mb-0 text-danger"
+            : "small mt-3 mb-0 text-success";
         startGameButton.hidden = !isHost || !waiting;
-        startGameButton.disabled = startingGame || !isHost || !waiting;
+        startGameButton.disabled = startingGame || !canManageRoom || Boolean(startError);
         cancelRoom.hidden = !isHost || !waiting;
     }
 
@@ -439,6 +539,7 @@
         }
         renderGameParticipants();
         renderMafiaTeam();
+        updateRoomControls();
     }
 
     function renderGameParticipants() {
@@ -698,10 +799,17 @@
         if (!game || !Array.isArray(game.players)) {
             throw new Error("The server returned an invalid room state.");
         }
+        if (!Number.isInteger(game.mafiaCount) || game.mafiaCount < 1) {
+            throw new Error("The server returned an invalid Mafia count.");
+        }
         mergeParticipants(game.players);
         mafiaCount = game.mafiaCount;
+        if (!mafiaSettingsDirty) {
+            mafiaCountInput.value = String(mafiaCount);
+        }
         if (!setGameStatus(game.status)) {
             updateRoomDetails();
+            updateRoomControls();
             return;
         }
         if (ownPlayerDetails) {
@@ -724,6 +832,7 @@
         }
         gameResult = game.result || null;
         updateRoomDetails();
+        updateRoomControls();
 
         if (currentPhase) {
             setGamePhase(currentPhase.phase, currentPhase.round);
@@ -878,6 +987,7 @@
             item.append(username, document.createTextNode(` ${message.message}`));
         }
         messages.append(item);
+        messages.scrollTop = messages.scrollHeight;
     }
 
     function appendEvent(event) {
@@ -971,6 +1081,17 @@
                     }
                     if (event.type === "PLAYER_JOINED") {
                         upsertParticipant(event.data);
+                    } else if (event.type === "GAME_SETTINGS_UPDATED" && event.data) {
+                        if (!Number.isInteger(event.data.mafiaCount) || event.data.mafiaCount < 1) {
+                            showStatus("The server sent an invalid Mafia count update.", true);
+                        } else {
+                            mafiaCount = event.data.mafiaCount;
+                            if (!mafiaSettingsDirty) {
+                                mafiaCountInput.value = String(mafiaCount);
+                            }
+                            updateRoomDetails();
+                            updateRoomControls();
+                        }
                     } else if (event.type === "GAME_STARTED") {
                         setGameStatus("STARTED");
                         loadRoomState().catch(error => showStatus(error.message, true));
@@ -1133,6 +1254,70 @@
         }
     });
 
+    mafiaCountInput.addEventListener("input", () => {
+        mafiaSettingsDirty = mafiaCountInput.value !== String(mafiaCount);
+        showMafiaSettingsFeedback("");
+        updateRoomControls();
+    });
+
+    mafiaSettingsForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!gameId || !token || !isHost || gameStatus !== "WAITING" || savingMafiaCount) {
+            return;
+        }
+
+        const requestedMafiaCount = Number(mafiaCountInput.value);
+        const maximum = maximumMafiaCount();
+        if (!Number.isInteger(requestedMafiaCount)
+            || requestedMafiaCount < 1
+            || requestedMafiaCount > maximum) {
+            showMafiaSettingsFeedback(
+                `Choose a whole number from 1 to ${maximum} for the current roster.`,
+                true
+            );
+            updateRoomControls();
+            return;
+        }
+
+        savingMafiaCount = true;
+        showMafiaSettingsFeedback("");
+        updateRoomControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/settings`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({ mafiaCount: requestedMafiaCount })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Settings update failed (${response.status}).`
+                ));
+            }
+
+            const updatedGame = await response.json();
+            if (!updatedGame
+                || !Number.isInteger(updatedGame.mafiaCount)
+                || updatedGame.mafiaCount !== requestedMafiaCount) {
+                throw new Error("The server returned an invalid Mafia count.");
+            }
+
+            mafiaCount = updatedGame.mafiaCount;
+            mafiaCountInput.value = String(mafiaCount);
+            mafiaSettingsDirty = false;
+            showMafiaSettingsFeedback("Mafia count saved.");
+            updateRoomDetails();
+        } catch (error) {
+            showMafiaSettingsFeedback(`Could not save Mafia count: ${error.message}`, true);
+        } finally {
+            savingMafiaCount = false;
+            updateRoomControls();
+        }
+    });
+
     advancePhaseButton.addEventListener("click", async () => {
         if (!gameId || !token || !isHost || !currentPhase
             || gameStatus !== "STARTED"
@@ -1173,6 +1358,12 @@
 
     startGameButton.addEventListener("click", async () => {
         if (!gameId || !token || !isHost || gameStatus !== "WAITING" || startingGame) {
+            return;
+        }
+        const startError = getStartConfigurationError();
+        if (startError) {
+            showStartFeedback(startError, true);
+            updateRoomControls();
             return;
         }
         startingGame = true;

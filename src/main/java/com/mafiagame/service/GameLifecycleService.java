@@ -1,6 +1,7 @@
 package com.mafiagame.service;
 
 import com.mafiagame.dto.EliminationResult;
+import com.mafiagame.dto.GameResponse;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.GameResult;
@@ -45,6 +46,23 @@ public class GameLifecycleService {
 
         broadcaster.toGameAndChatAfterCommit(gameId, "GAME_STARTED", Map.of(), "The game has started.");
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, 1);   // the game always begins with night of round 1
+    }
+
+    @Transactional
+    public GameResponse updateMafiaCount(UUID gameId, String rawSessionToken, Integer mafiaCount) {
+        Game game = lock(gameId);
+        playerService.requireHost(gameId, rawSessionToken);
+        if (game.getStatus() != GameStatus.WAITING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Game settings can only be changed before the game starts");
+        }
+
+        playerService.validateMafiaCountForGame(gameId, mafiaCount);
+        game.setMafiaCount(mafiaCount);
+        games.save(game);
+
+        GameResponse response = GameResponse.from(game);
+        broadcaster.toGameAfterCommit(gameId, "GAME_SETTINGS_UPDATED", response);
+        return response;
     }
 
     /**

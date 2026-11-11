@@ -56,16 +56,12 @@ public class GameService {
     @Transactional
     public GameCreationResult createGame(CreateGameRequest request) {
         String nickname = requireNickname(request.nickname());
-        Integer mafiaCount = request.mafiaCount();
-        if (mafiaCount == null || mafiaCount < 1) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1");
-        }
         String joinCode = JoinCodeGenerator.generateJoinCode();
         String rawSessionToken = SessionTokenGenerator.generateToken();
 
         // TODO Check if join code already exists
 
-        Game game = new Game(mafiaCount, joinCode);
+        Game game = new Game(1, joinCode);
         gameRepository.save(game);
 
         Player player = new Player(game,
