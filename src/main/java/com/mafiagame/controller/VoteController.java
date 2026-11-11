@@ -3,6 +3,7 @@ package com.mafiagame.controller;
 
 import com.mafiagame.dto.CreateVoteRequest;
 import com.mafiagame.dto.VoteResponse;
+import com.mafiagame.dto.VoteStatusResponse;
 import com.mafiagame.service.VotingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,14 @@ public class VoteController {
 
 
     private final VotingService votingService;
+
+    @GetMapping("/status")
+    public ResponseEntity<VoteStatusResponse> getVoteStatus(
+            @RequestParam UUID phaseId,
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken) {
+        return ResponseEntity.ok(votingService.getVoteStatus(phaseId, rawSessionToken));
+    }
+
 
     /**
      * Retrieves the authenticated player's vote for the specified phase.

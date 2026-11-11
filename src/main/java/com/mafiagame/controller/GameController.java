@@ -54,6 +54,17 @@ public class GameController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}/settings")
+    public ResponseEntity<GameResponse> updateGameSettings(
+            @PathVariable UUID id,
+            @RequestHeader("X-Session-Token") String rawSessionToken,
+            @Valid @RequestBody UpdateGameSettingsRequest request
+    ) {
+        return ResponseEntity.ok(
+                gameLifecycleService.updateMafiaCount(id, rawSessionToken, request.mafiaCount())
+        );
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteGame(
             @PathVariable UUID id,

@@ -38,10 +38,20 @@ public class GamePhaseService {
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
-        broadcaster.toGameAfterCommit(game.getId(), "PHASE_CHANGED", Map.of("phase", type, ROUND_TAG, round));
+        String phaseName = type == PhaseType.NIGHT ? "Night" : "Day";
+        broadcaster.toGameAndChatAfterCommit(
+                game.getId(),
+                "PHASE_CHANGED",
+                Map.of("phase", type, ROUND_TAG, round),
+                phaseName + " of round " + round + " has begun."
+        );
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
-            case NIGHT -> broadcaster.toMafiaAfterCommit(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+            case NIGHT -> {
+                if (round > 1) {
+                    broadcaster.toMafiaAfterCommit(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+                }
+            }
             case DAY -> broadcaster.toGameAfterCommit(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
             default -> throw new IllegalStateException("Unexpected value: " + type);
         }

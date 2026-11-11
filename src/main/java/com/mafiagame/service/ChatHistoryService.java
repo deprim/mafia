@@ -1,6 +1,7 @@
 package com.mafiagame.service;
 
 import com.mafiagame.dto.ChatMessage;
+import com.mafiagame.dto.ChatMessagePayload;
 import com.mafiagame.dto.PersistedChatMessage;
 import com.mafiagame.model.ChatMessageRecord;
 import com.mafiagame.model.Player;
@@ -44,6 +45,15 @@ public class ChatHistoryService {
 
     @Transactional
     public PersistedChatMessage save(UUID gameId, ChatMessage message) {
+        return save(gameId, new ChatMessagePayload(message.message(), message.username(), false));
+    }
+
+    @Transactional
+    public PersistedChatMessage saveSystemMessage(UUID gameId, String message) {
+        return save(gameId, new ChatMessagePayload(message, "Game", true));
+    }
+
+    private PersistedChatMessage save(UUID gameId, ChatMessagePayload message) {
         try {
             String payload = objectMapper.writeValueAsString(message);
             ChatMessageRecord saved = messageRepository.save(new ChatMessageRecord(
@@ -82,19 +92,20 @@ public class ChatHistoryService {
 
     private PersistedChatMessage toResponse(ChatMessageRecord saved) {
         try {
-            ChatMessage message = objectMapper.readValue(saved.getPayload(), ChatMessage.class);
+            ChatMessagePayload message = objectMapper.readValue(saved.getPayload(), ChatMessagePayload.class);
             return toResponse(saved, message);
         } catch (JacksonException e) {
             throw new IllegalStateException("Stored chat message is invalid", e);
         }
     }
 
-    private PersistedChatMessage toResponse(ChatMessageRecord saved, ChatMessage message) {
+    private PersistedChatMessage toResponse(ChatMessageRecord saved, ChatMessagePayload message) {
         return new PersistedChatMessage(
                 saved.getId(),
                 saved.getCreatedAt(),
-                message.message(),
-                message.username()
+                message.getMessage(),
+                message.getUsername(),
+                message.isSystem()
         );
     }
 }

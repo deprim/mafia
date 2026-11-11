@@ -1,6 +1,7 @@
 package com.mafiagame.service;
 
 import com.mafiagame.dto.PlayerDetailsResponse;
+import com.mafiagame.dto.PlayerResponse;
 import com.mafiagame.model.Elimination;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -99,14 +100,31 @@ public class PlayerService {
         List<Player> roster = players.findByGameId(gameId);
         if (roster.size() < MIN_PLAYERS)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Need at least " + MIN_PLAYERS + " players");
-        if (configuredMafiaCount == null || configuredMafiaCount < 1 || 2L * configuredMafiaCount >= roster.size())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1 and fewer than the number of Civilians");
+        validateMafiaCount(roster.size(), configuredMafiaCount);
 
         Collections.shuffle(roster);
         for (int i = 0; i < roster.size(); i++)
             roster.get(i).setRole(i < configuredMafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
         players.saveAll(roster);
         log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, roster.size(), configuredMafiaCount);
+    }
+
+    public void validateMafiaCountForGame(UUID gameId, Integer configuredMafiaCount) {
+        validateMafiaCount(players.findByGameId(gameId).size(), configuredMafiaCount);
+    }
+
+    private void validateMafiaCount(int playerCount, Integer configuredMafiaCount) {
+        if (configuredMafiaCount == null || configuredMafiaCount < 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1");
+        }
+
+        int maximumMafiaCount = Math.max(0, (playerCount - 1) / 2);
+        if (configuredMafiaCount > maximumMafiaCount) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "There must be at least one more civilian than Mafia"
+            );
+        }
     }
 
     public Player requireHost(UUID gameId, String rawSessionToken) {
@@ -133,7 +151,20 @@ public class PlayerService {
 
         if (!requester.getId().equals(playerId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
 
-        return PlayerDetailsResponse.from(requester);
+        List<PlayerResponse> mafiaTeammates = List.of();
+        if (requester.getRole() == PlayerRole.MAFIA) {
+            mafiaTeammates = players.findByGameId(requester.getGame().getId()).stream()
+                .filter(player -> player.getRole() == PlayerRole.MAFIA && !player.getId().equals(requester.getId()))
+                .map(player -> new PlayerResponse(
+                        player.getId(),
+                        player.getNickname(),
+                        player.isHost(),
+                        player.getStatus()
+                ))
+                .toList();
+        }
+
+        return PlayerDetailsResponse.from(requester, mafiaTeammates);
     }
 
 }

@@ -3,46 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Mafia multiplayer demo</title>
+    <title>Mafia Game Manager</title>
     <link rel="stylesheet" th:href="@{/vendor/bootstrap/5.3.8/css/bootstrap.min.css}">
 </head>
-<body>
-<main class="container py-4">
-    <h1>Mafia multiplayer demo</h1>
-    <p>Create a room or join one to try the live WebSocket room.</p>
-    <p id="message" role="status" aria-live="polite"></p>
+<body class="bg-body-tertiary">
+<main class="container py-4 py-lg-5">
+    <header class="mb-4 mb-lg-5">
+        <p class="small fw-semibold text-primary text-uppercase mb-2">Mafia multiplayer</p>
+        <h1 class="display-6 fw-bold mb-1">Play together</h1>
+        <p class="text-body-secondary mb-0">Create a room for your group or join one with an invite code.</p>
+    </header>
+    <p id="message" class="alert alert-info py-2 mb-4" role="status" aria-live="polite" hidden></p>
 
-    <section>
-        <h2>Create a room</h2>
-        <form id="create-form">
-            <p>
-                <label for="host-nickname">Host nickname</label><br>
-                <input id="host-nickname" maxlength="40" required>
-            </p>
-            <p>
-                <label for="mafia-count">Mafia count</label><br>
-                <input id="mafia-count" type="number" min="1" value="1" required>
-            </p>
-            <button type="submit">Create room</button>
-        </form>
-    </section>
-
-    <hr>
-
-    <section>
-        <h2>Join a room</h2>
-        <form id="join-form">
-            <p>
-                <label for="join-code">Room code</label><br>
-                <input id="join-code" minlength="8" maxlength="8" required>
-            </p>
-            <p>
-                <label for="guest-nickname">Guest nickname</label><br>
-                <input id="guest-nickname" maxlength="40" required>
-            </p>
-            <button type="submit">Join room</button>
-        </form>
-    </section>
+    <div class="row g-4 align-items-stretch">
+        <div class="col-12 col-md-6">
+            <section class="card border-0 shadow-sm h-100" aria-labelledby="join-heading">
+                <div class="card-body d-flex flex-column p-4 p-lg-5">
+                    <p class="small fw-semibold text-primary text-uppercase mb-2">Have an invite?</p>
+                    <h2 id="join-heading" class="h4 fw-bold mb-2">Join a room</h2>
+                    <p class="text-body-secondary mb-4">Enter the room code and choose the name your group will see.</p>
+                    <form id="join-form" class="mt-auto">
+                        <div class="mb-3">
+                            <label for="join-code" class="form-label fw-semibold">Room code</label>
+                            <input id="join-code" class="form-control" minlength="8" maxlength="8" autocomplete="off" placeholder="8-character code" required>
+                        </div>
+                        <div class="mb-4">
+                            <label for="guest-nickname" class="form-label fw-semibold">Your nickname</label>
+                            <input id="guest-nickname" class="form-control" maxlength="40" autocomplete="nickname" placeholder="Enter your nickname" required>
+                        </div>
+                        <button class="btn btn-primary w-100" type="submit">Join room</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-md-6">
+            <section class="card border-0 shadow-sm h-100" aria-labelledby="create-heading">
+                <div class="card-body d-flex flex-column p-4 p-lg-5">
+                    <p class="small fw-semibold text-primary text-uppercase mb-2">Start a new game</p>
+                    <h2 id="create-heading" class="h4 fw-bold mb-2">Create a room</h2>
+                    <p class="text-body-secondary mb-4">Set up your room, then share its invite link with your players.</p>
+                    <form id="create-form" class="mt-auto">
+                        <div class="mb-3">
+                            <label for="host-nickname" class="form-label fw-semibold">Your nickname</label>
+                            <input id="host-nickname" class="form-control" maxlength="40" autocomplete="nickname" placeholder="Enter your nickname" required>
+                        </div>
+                        <button class="btn btn-primary w-100" type="submit">Create room</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </div>
 </main>
 <script th:src="@{/vendor/bootstrap/5.3.8/js/bootstrap.bundle.min.js}"></script>
 <script th:src="@{/vendor/stomp/7.5.0/stomp.umd.min.js}"></script>
@@ -51,7 +61,10 @@
 
     function showMessage(text, isError = false) {
         message.textContent = text;
-        message.className = isError ? "text-danger" : "";
+        message.className = text
+            ? `alert ${isError ? "alert-danger" : "alert-info"} py-2 mb-4`
+            : "";
+        message.hidden = !text;
     }
 
     async function submitJson(path, data) {
@@ -86,16 +99,15 @@
         sessionStorage.setItem("mafiaDemoNickname", nickname);
         sessionStorage.setItem("mafiaDemoSessionToken", token);
         sessionStorage.setItem("mafiaDemoIsHost", String(host));
-        window.location.href = "/websocket-example.html?gameId=" + encodeURIComponent(gameId);
+        window.location.href = "/game.html?gameId=" + encodeURIComponent(gameId);
     }
 
     document.getElementById("create-form").addEventListener("submit", async event => {
         event.preventDefault();
         showMessage("");
         const nickname = document.getElementById("host-nickname").value.trim();
-        const mafiaCount = Number(document.getElementById("mafia-count").value);
         try {
-            const result = await submitJson("/api/games", { nickname, mafiaCount });
+            const result = await submitJson("/api/games", { nickname });
             openRoom(result.body.id, result.body.joinCode, nickname, result.token, true);
         } catch (error) {
             showMessage(error.message, true);

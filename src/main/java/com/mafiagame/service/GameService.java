@@ -33,6 +33,7 @@ public class GameService {
     private final GameResultRepository gameResultRepository;
     private final GamePhaseService gamePhaseService;
     private final GameBroadcaster broadcaster;
+    private final ChatHistoryService chatHistory;
 
     @Autowired
     public GameService(
@@ -40,29 +41,27 @@ public class GameService {
             PlayerRepository playerRepository,
             GameResultRepository gameResultRepository,
             GamePhaseService gamePhaseService,
-            GameBroadcaster broadcaster
+            GameBroadcaster broadcaster,
+            ChatHistoryService chatHistory
     ) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.gameResultRepository = gameResultRepository;
         this.gamePhaseService = gamePhaseService;
         this.broadcaster = broadcaster;
+        this.chatHistory = chatHistory;
     }
 
 
     @Transactional
     public GameCreationResult createGame(CreateGameRequest request) {
         String nickname = requireNickname(request.nickname());
-        Integer mafiaCount = request.mafiaCount();
-        if (mafiaCount == null || mafiaCount < 1) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mafia count must be at least 1");
-        }
         String joinCode = JoinCodeGenerator.generateJoinCode();
         String rawSessionToken = SessionTokenGenerator.generateToken();
 
         // TODO Check if join code already exists
 
-        Game game = new Game(mafiaCount, joinCode);
+        Game game = new Game(1, joinCode);
         gameRepository.save(game);
 
         Player player = new Player(game,
@@ -71,6 +70,7 @@ public class GameService {
                 SessionTokenGenerator.hashToken(rawSessionToken)); // Store hashed token in DB
 
         playerRepository.save(player);
+        chatHistory.saveSystemMessage(game.getId(), nickname + " created the room.");
         log.info("Game created with ID {} and host player with ID {}", game.getId(), player.getId());
 
 
@@ -118,7 +118,12 @@ public class GameService {
                 player.isHost(),
                 player.getStatus()
         );
-        broadcaster.toGameAfterCommit(game.getId(), "PLAYER_JOINED", playerResponse);
+        broadcaster.toGameAndChatAfterCommit(
+                game.getId(),
+                "PLAYER_JOINED",
+                playerResponse,
+                playerResponse.nickname() + " joined the room."
+        );
 
         return new PlayerJoinResult(
                 game.getId(),
