@@ -1,0 +1,1431 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mafia Game Room</title>
+    <link rel="stylesheet" href="/vendor/bootstrap/5.3.8/css/bootstrap.min.css">
+    <style>
+        .game-chat-panel {
+            height: 100%;
+            min-height: 0;
+        }
+
+        .game-chat-panel > .card-body {
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .game-chat-message-list {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        #chat-form {
+            flex: 0 0 auto;
+        }
+
+        @media (max-width: 991.98px) {
+            .game-chat-panel {
+                height: 24rem;
+                min-height: 24rem;
+                max-height: 24rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-body-tertiary">
+<main class="container py-4 py-lg-5">
+    <div class="row g-4 align-items-stretch">
+        <div class="col-12 col-lg-8">
+            <header class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+                <div>
+                    <p class="small fw-semibold text-primary text-uppercase mb-2">Mafia · Multiplayer</p>
+                    <h1 class="display-6 fw-bold mb-1">Mafia Game Room</h1>
+                    <p class="text-body-secondary mb-0">Follow the game, cast your vote, and keep your team in play.</p>
+                </div>
+                <div class="d-flex flex-column align-items-md-end gap-2">
+                    <p id="connection-status" class="small mb-0 text-body-secondary" role="status" aria-live="polite">Connecting…</p>
+                    <p id="room-details" class="small text-body-secondary text-md-end mb-0"></p>
+                </div>
+            </header>
+
+            <section class="card border-0 shadow-sm mb-4" aria-labelledby="invite-heading">
+                <div class="card-body d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+                    <div>
+                        <h2 id="invite-heading" class="h6 fw-semibold mb-1">Invite players</h2>
+                        <p class="small text-body-secondary mb-0">Share this room link with the rest of your group.</p>
+                    </div>
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <a id="invite-link" class="btn btn-sm btn-outline-primary text-break"></a>
+                        <button id="copy-invite-link" class="btn btn-sm btn-success" type="button" disabled>Copy</button>
+                        <span id="invite-copy-feedback" class="visually-hidden" role="status" aria-live="polite"></span>
+                    </div>
+                </div>
+            </section>
+
+            <section id="lobby-view" class="card border-0 shadow-sm mb-4" aria-labelledby="lobby-heading" hidden>
+                <div class="card-header bg-white border-0 px-4 pt-4">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                        <div>
+                            <p class="small fw-semibold text-body-secondary text-uppercase mb-1">Room setup</p>
+                            <h2 id="lobby-heading" class="h4 mb-0">Lobby</h2>
+                        </div>
+                        <span class="badge rounded-pill text-bg-secondary">Waiting for the host</span>
+                    </div>
+                </div>
+                <div class="card-body px-4">
+                    <p class="text-body-secondary">Participants are listed below. The host can start once everyone has joined.</p>
+                    <h3 class="h6 fw-semibold">Participants</h3>
+                    <p id="empty-roster" class="small text-body-secondary">Loading participants…</p>
+                    <ul id="participant-list" class="list-group border rounded-3 overflow-hidden mb-4" aria-live="polite"></ul>
+                    <section id="mafia-settings" class="rounded-3 bg-body-tertiary p-3 mb-4" aria-labelledby="mafia-settings-heading" hidden>
+                        <h3 id="mafia-settings-heading" class="h6 fw-semibold mb-2">Game settings</h3>
+                        <p class="small text-body-secondary">Choose a Mafia count that leaves at least one more civilian than Mafia.</p>
+                        <form id="mafia-settings-form" class="row g-3 align-items-end">
+                            <div class="col-12 col-sm">
+                                <label for="mafia-count" class="form-label fw-semibold">Number of Mafia</label>
+                                <input id="mafia-count" class="form-control" type="number" min="1" value="1" required>
+                                <div id="mafia-count-help" class="form-text"></div>
+                            </div>
+                            <div class="col-12 col-sm-auto">
+                                <button id="save-mafia-count" class="btn btn-outline-primary w-100" type="submit" disabled>Save Mafia count</button>
+                            </div>
+                        </form>
+                        <p id="mafia-settings-feedback" class="small mt-2 mb-0" role="status" aria-live="polite"></p>
+                    </section>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button id="start-game" class="btn btn-primary" type="button" hidden>Start game</button>
+                        <button id="cancel-room" class="btn btn-outline-danger" type="button" hidden>Cancel room</button>
+                    </div>
+                    <p id="start-readiness" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
+                    <p id="start-feedback" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
+                </div>
+            </section>
+
+            <section id="game-view" class="card border-0 shadow-sm mb-4" aria-labelledby="game-heading" hidden>
+                <div class="card-header bg-white border-0 px-4 pt-4">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                        <div>
+                            <p class="small fw-semibold text-body-secondary text-uppercase mb-1">Live game</p>
+                            <h2 id="game-heading" class="h4 mb-0">Game overview</h2>
+                        </div>
+                        <p id="game-status" class="badge rounded-pill text-bg-secondary mb-0" role="status" aria-live="polite"></p>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                                <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Current phase</p>
+                                <p id="game-phase" class="h5 mb-0"></p>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                                <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Your role</p>
+                                <p class="mb-0"><span id="player-role" class="badge rounded-pill text-bg-secondary">Loading…</span></p>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <div class="h-100 rounded-3 bg-body-tertiary p-3">
+                                <p class="small fw-semibold text-body-secondary text-uppercase mb-2">Your status</p>
+                                <p class="mb-0"><span id="player-status" class="badge rounded-pill text-bg-secondary">Loading…</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <section id="mafia-team-panel" class="card border-0 bg-danger-subtle mt-4" aria-labelledby="mafia-team-heading" hidden>
+                        <div class="card-body">
+                            <h3 id="mafia-team-heading" class="h5 mb-2">Your Mafia team</h3>
+                            <p class="small text-body-secondary mb-3">Only Mafia players can see this list.</p>
+                            <p id="mafia-team-empty" class="small text-body-secondary mb-0" hidden>No other Mafia players are in this game.</p>
+                            <ul id="mafia-team-list" class="list-group list-group-flush"></ul>
+                        </div>
+                    </section>
+
+                    <section id="game-participants-panel" class="card border-0 bg-body-tertiary mt-4" aria-labelledby="game-participants-heading">
+                        <div class="card-body p-3 p-md-4">
+                            <h3 id="game-participants-heading" class="h5 mb-2">Players</h3>
+                            <p id="vote-progress" class="small text-body-secondary mb-3" role="status" aria-live="polite">Loading vote status…</p>
+                            <ul id="game-participant-list" class="list-group border rounded-3 overflow-hidden" aria-live="polite"></ul>
+                        </div>
+                    </section>
+
+                    <section id="voting-panel" class="card border-0 bg-body-tertiary mt-4" aria-labelledby="voting-heading" hidden>
+                        <div class="card-body p-3 p-md-4">
+                            <h3 id="voting-heading" class="h5 mb-2">Voting</h3>
+                            <p id="voting-feedback" class="small text-body-secondary mb-3" role="status" aria-live="polite"></p>
+                            <form id="vote-form">
+                                <div class="row g-3 align-items-end">
+                                    <div class="col-12 col-md">
+                                        <label for="vote-target" class="form-label">Choose a living player</label>
+                                        <select id="vote-target" class="form-select" required disabled>
+                                            <option value="">No available targets</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-auto">
+                                        <button id="submit-vote" class="btn btn-primary w-100" type="submit" disabled>Submit vote</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+
+                    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2 mt-4">
+                        <button id="advance-phase" class="btn btn-outline-primary" type="button" hidden>Advance phase</button>
+                        <p id="advance-feedback" class="small mb-0" role="status" aria-live="polite"></p>
+                    </div>
+                    <section id="result-view" class="alert alert-primary border-0 mt-4 mb-0" aria-labelledby="result-heading" hidden>
+                        <h3 id="result-heading" class="alert-heading h5">Game complete</h3>
+                        <p id="winning-team" class="mb-0" role="status" aria-live="polite"></p>
+                    </section>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-lg-4 d-flex">
+            <section class="card border-0 shadow-sm d-flex flex-column flex-fill h-100 game-chat-panel" aria-labelledby="chat-heading">
+                <div class="card-header bg-white border-0 px-4 pt-4">
+                    <h2 id="chat-heading" class="h4 mb-0">Room Conversation</h2>
+                </div>
+                <div class="card-body d-flex flex-column flex-grow-1 gap-3 p-4">
+                    <ul id="messages" class="list-group list-group-flush flex-grow-1 game-chat-message-list" aria-live="polite"></ul>
+                    <form id="chat-form" class="mt-auto">
+                        <label for="chat-message" class="form-label">Message</label>
+                        <div class="input-group">
+                            <input id="chat-message" class="form-control" maxlength="300" required>
+                            <button id="send-chat" class="btn btn-primary" type="submit" disabled>Send</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+<script src="/vendor/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+<script src="/vendor/stomp/7.5.0/stomp.umd.min.js"></script>
+<script>
+    const gameId = sessionStorage.getItem("mafiaDemoGameId");
+    const joinCode = sessionStorage.getItem("mafiaDemoJoinCode");
+    const nickname = sessionStorage.getItem("mafiaDemoNickname");
+    const token = sessionStorage.getItem("mafiaDemoSessionToken");
+    let isHost = false;
+    const status = document.getElementById("connection-status");
+    const roomDetails = document.getElementById("room-details");
+    const inviteLink = document.getElementById("invite-link");
+    const copyInviteButton = document.getElementById("copy-invite-link");
+    const inviteCopyFeedback = document.getElementById("invite-copy-feedback");
+    const lobbyView = document.getElementById("lobby-view");
+    const gameView = document.getElementById("game-view");
+    const participantList = document.getElementById("participant-list");
+    const gameParticipantList = document.getElementById("game-participant-list");
+    const voteProgressText = document.getElementById("vote-progress");
+    const mafiaTeamPanel = document.getElementById("mafia-team-panel");
+    const mafiaTeamList = document.getElementById("mafia-team-list");
+    const mafiaTeamEmpty = document.getElementById("mafia-team-empty");
+    const emptyRoster = document.getElementById("empty-roster");
+    const startGameButton = document.getElementById("start-game");
+    const startFeedback = document.getElementById("start-feedback");
+    const startReadinessText = document.getElementById("start-readiness");
+    const cancelRoom = document.getElementById("cancel-room");
+    const mafiaSettings = document.getElementById("mafia-settings");
+    const mafiaSettingsForm = document.getElementById("mafia-settings-form");
+    const mafiaCountInput = document.getElementById("mafia-count");
+    const mafiaCountHelp = document.getElementById("mafia-count-help");
+    const saveMafiaCountButton = document.getElementById("save-mafia-count");
+    const mafiaSettingsFeedback = document.getElementById("mafia-settings-feedback");
+    const gameStatusText = document.getElementById("game-status");
+    const gamePhaseText = document.getElementById("game-phase");
+    const playerRoleText = document.getElementById("player-role");
+    const playerStatusText = document.getElementById("player-status");
+    const votingPanel = document.getElementById("voting-panel");
+    const votingFeedback = document.getElementById("voting-feedback");
+    const voteTargetSelect = document.getElementById("vote-target");
+    const submitVoteButton = document.getElementById("submit-vote");
+    const advancePhaseButton = document.getElementById("advance-phase");
+    const advanceFeedback = document.getElementById("advance-feedback");
+    const resultView = document.getElementById("result-view");
+    const winningTeamText = document.getElementById("winning-team");
+    const messages = document.getElementById("messages");
+    const sendChat = document.getElementById("send-chat");
+    const seenEventIds = new Set();
+    const participants = new Map();
+    const gameStatusOrder = { WAITING: 0, STARTED: 1, FINISHED: 2 };
+    const MIN_PLAYERS = 4;
+    let gameStatus = null;
+    let mafiaCount = null;
+    let startingGame = false;
+    let savingMafiaCount = false;
+    let mafiaSettingsDirty = false;
+    let ownPlayerDetails = null;
+    let ownDetailsRequest = null;
+    let currentPhase = null;
+    let gameResult = null;
+    let myVoteTargetId = null;
+    let eligibleVoterIds = new Set();
+    let votedPlayerIds = new Set();
+    let voteStatusVisible = false;
+    let phaseVotesReady = false;
+    let submittingVote = false;
+    let advancingPhase = false;
+    let copyFeedbackTimeout = null;
+    let mafiaSubscription = null;
+    let client;
+
+    function showStatus(text, isError = false) {
+        status.textContent = text;
+        status.className = isError
+            ? "small mb-0 text-danger"
+            : "small mb-0 text-body-secondary";
+    }
+
+    function showStartFeedback(text, isError = false) {
+        startFeedback.textContent = text;
+        startFeedback.className = isError
+            ? "small mt-3 mb-0 text-danger"
+            : "small mt-3 mb-0 text-body-secondary";
+    }
+
+    function showMafiaSettingsFeedback(text, isError = false) {
+        mafiaSettingsFeedback.textContent = text;
+        mafiaSettingsFeedback.className = isError
+            ? "small mt-2 mb-0 text-danger"
+            : "small mt-2 mb-0 text-body-secondary";
+    }
+
+    function showVotingFeedback(text, isError = false) {
+        votingFeedback.textContent = text;
+        votingFeedback.className = isError
+            ? "small mb-3 text-danger"
+            : "small mb-3 text-body-secondary";
+    }
+
+    function showAdvanceFeedback(text, isError = false) {
+        advanceFeedback.textContent = text;
+        advanceFeedback.className = isError
+            ? "small mb-0 text-danger"
+            : "small mb-0 text-body-secondary";
+    }
+
+    async function responseErrorMessage(response, fallback) {
+        const text = await response.text();
+        if (!text) {
+            return fallback;
+        }
+
+        let body;
+        try {
+            body = JSON.parse(text);
+        } catch (error) {
+            return fallback;
+        }
+        if (body && typeof body.detail === "string" && body.detail.trim()) {
+            return body.detail;
+        }
+        if (body && typeof body.message === "string" && body.message.trim()) {
+            return body.message;
+        }
+        return fallback;
+    }
+
+    function updateRoomDetails() {
+        if (!joinCode || !nickname) {
+            return;
+        }
+        const statusText = gameStatus ? ` · Status: ${gameStatus.toLowerCase()}` : "";
+        const mafiaText = mafiaCount === null ? "" : ` · Mafia count: ${mafiaCount}`;
+        roomDetails.textContent = `Room ${joinCode}${statusText}${mafiaText} · You are ${nickname}`;
+    }
+
+    function maximumMafiaCount(playerCount = participants.size) {
+        return Math.max(0, Math.floor((playerCount - 1) / 2));
+    }
+
+    function getStartConfigurationError() {
+        if (participants.size < MIN_PLAYERS) {
+            return `At least ${MIN_PLAYERS} players are required to start (${participants.size} joined).`;
+        }
+
+        const selectedMafiaCount = mafiaSettingsDirty
+            ? Number(mafiaCountInput.value)
+            : mafiaCount;
+        if (!Number.isInteger(selectedMafiaCount) || selectedMafiaCount < 1) {
+            return "Mafia count must be at least 1.";
+        }
+
+        const maximum = maximumMafiaCount();
+        if (selectedMafiaCount > maximum) {
+            return `With ${participants.size} players, the maximum is ${maximum} Mafia; there must be at least one more civilian than Mafia.`;
+        }
+        if (mafiaSettingsDirty) {
+            return "Save the Mafia count before starting the game.";
+        }
+        return null;
+    }
+
+    function updateRoomControls() {
+        const waiting = gameStatus === "WAITING";
+        const canManageRoom = isHost && waiting;
+        const maximum = maximumMafiaCount();
+        const selectedMafiaCount = Number(mafiaCountInput.value);
+        const validMafiaCount = mafiaCountInput.value.trim() !== ""
+            && Number.isInteger(selectedMafiaCount)
+            && selectedMafiaCount >= 1
+            && selectedMafiaCount <= maximum;
+
+        mafiaSettings.hidden = !canManageRoom;
+        mafiaCountInput.max = String(maximum);
+        mafiaCountInput.disabled = !canManageRoom || savingMafiaCount || maximum < 1;
+        mafiaCountHelp.textContent = maximum > 0
+            ? `Maximum with ${participants.size} players: ${maximum}. Keep at least one more civilian than Mafia.`
+            : "At least three players are needed before a Mafia count can be configured.";
+        saveMafiaCountButton.disabled = !canManageRoom
+            || savingMafiaCount
+            || !mafiaSettingsDirty
+            || !validMafiaCount;
+        saveMafiaCountButton.textContent = savingMafiaCount ? "Saving…" : "Save Mafia count";
+
+        const startError = getStartConfigurationError();
+        startReadinessText.textContent = startError || "The game is ready to start.";
+        startReadinessText.className = startError
+            ? "small mt-3 mb-0 text-danger"
+            : "small mt-3 mb-0 text-success";
+        startGameButton.hidden = !isHost || !waiting;
+        startGameButton.disabled = startingGame || !canManageRoom || Boolean(startError);
+        cancelRoom.hidden = !isHost || !waiting;
+    }
+
+    function clearVoteTargets() {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No available targets";
+        voteTargetSelect.replaceChildren(option);
+        voteTargetSelect.disabled = true;
+        submitVoteButton.disabled = true;
+    }
+
+    function clearVoteProgress() {
+        eligibleVoterIds = new Set();
+        votedPlayerIds = new Set();
+        voteStatusVisible = false;
+        phaseVotesReady = false;
+        renderGameParticipants();
+    }
+
+    function renderVotingControls() {
+        votingPanel.hidden = gameStatus !== "STARTED";
+        if (gameStatus !== "STARTED") {
+            clearVoteTargets();
+            return;
+        }
+
+        if (!currentPhase || !currentPhase.phaseId) {
+            showVotingFeedback("No active phase is available for voting.");
+            clearVoteTargets();
+            return;
+        }
+        if (!ownPlayerDetails) {
+            showVotingFeedback("Loading your player details…");
+            clearVoteTargets();
+            return;
+        }
+        if (ownPlayerDetails.status !== "ALIVE") {
+            showVotingFeedback("You have been eliminated and cannot vote.");
+            clearVoteTargets();
+            return;
+        }
+
+        if (currentPhase.phase === "NIGHT" && currentPhase.round === 1) {
+            showVotingFeedback("Voting is not available on the first night.");
+            clearVoteTargets();
+            return;
+        }
+
+        const hasAssignedRole = ownPlayerDetails.role === "MAFIA"
+            || ownPlayerDetails.role === "CIVILIAN";
+        const canVoteInPhase = hasAssignedRole
+            && (currentPhase.phase === "DAY"
+                || (currentPhase.phase === "NIGHT"
+                && currentPhase.round > 1
+                && ownPlayerDetails.role === "MAFIA"));
+        if (!canVoteInPhase) {
+            showVotingFeedback("You cannot vote during this phase.");
+            clearVoteTargets();
+            return;
+        }
+
+        const targets = [...participants.values()].filter(player =>
+            player.status === "ALIVE" && player.id !== ownPlayerDetails.id
+        );
+        const previousSelection = voteTargetSelect.value;
+        const targetIds = new Set(targets.map(player => player.id));
+        voteTargetSelect.replaceChildren();
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a living player";
+        voteTargetSelect.append(placeholder);
+
+        for (const player of targets) {
+            const option = document.createElement("option");
+            option.value = player.id;
+            option.textContent = player.nickname;
+            voteTargetSelect.append(option);
+        }
+
+        const selectedTargetId = targetIds.has(previousSelection)
+            ? previousSelection
+            : targetIds.has(myVoteTargetId) ? myVoteTargetId : "";
+        voteTargetSelect.value = selectedTargetId;
+
+        const currentTarget = targets.find(player => player.id === myVoteTargetId);
+        if (currentTarget) {
+            showVotingFeedback(`Your current vote: ${currentTarget.nickname}. Select another living player to change it.`);
+        } else if (targets.length > 0) {
+            showVotingFeedback("Choose a living player to submit your vote.");
+        } else {
+            showVotingFeedback("There are no living players available to vote for.");
+        }
+
+        voteTargetSelect.disabled = submittingVote || targets.length === 0;
+        submitVoteButton.textContent = myVoteTargetId ? "Change vote" : "Submit vote";
+        submitVoteButton.disabled = submittingVote
+            || targets.length === 0
+            || !selectedTargetId
+            || selectedTargetId === myVoteTargetId;
+    }
+
+    function updateGameControls() {
+        const finished = gameStatus === "FINISHED";
+        const canAdvance = isHost && gameStatus === "STARTED" && currentPhase && currentPhase.phaseId;
+
+        advancePhaseButton.hidden = !canAdvance;
+        advancePhaseButton.disabled = advancingPhase || !canAdvance || !phaseVotesReady;
+
+        resultView.hidden = !finished;
+        if (finished) {
+            const winner = gameResult && gameResult.winningTeam;
+            winningTeamText.textContent = winner
+                ? `Winning team: ${winner.charAt(0) + winner.slice(1).toLowerCase()}.`
+                : "The game has finished, but the winning team is unavailable.";
+        }
+
+        renderVotingControls();
+    }
+
+    function renderParticipants() {
+        const roster = [...participants.values()];
+        participantList.replaceChildren();
+        emptyRoster.hidden = roster.length > 0;
+
+        for (const player of roster) {
+            const item = document.createElement("li");
+            item.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
+
+            const name = document.createElement("span");
+            name.textContent = player.nickname;
+            item.append(name);
+
+            if (player.host) {
+                const hostBadge = document.createElement("span");
+                hostBadge.className = "badge text-bg-primary";
+                hostBadge.textContent = "Host";
+                item.append(hostBadge);
+            }
+
+            participantList.append(item);
+        }
+        renderGameParticipants();
+        renderMafiaTeam();
+        updateRoomControls();
+    }
+
+    function renderGameParticipants() {
+        const roster = [...participants.values()];
+        gameParticipantList.replaceChildren();
+
+        for (const player of roster) {
+            const item = document.createElement("li");
+            item.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
+
+            const name = document.createElement("span");
+            name.className = "fw-semibold";
+            name.textContent = player.nickname;
+
+            const badges = document.createElement("div");
+            badges.className = "d-flex flex-wrap justify-content-end gap-2";
+
+            const statusBadge = document.createElement("span");
+            statusBadge.className = player.status === "ALIVE"
+                ? "badge rounded-pill text-bg-success"
+                : "badge rounded-pill text-bg-danger";
+            statusBadge.textContent = player.status === "ALIVE" ? "Alive" : "Dead";
+            badges.append(statusBadge);
+
+            if (player.host) {
+                const hostBadge = document.createElement("span");
+                hostBadge.className = "badge rounded-pill text-bg-primary";
+                hostBadge.textContent = "Host";
+                badges.append(hostBadge);
+            }
+
+            if (voteStatusVisible && eligibleVoterIds.has(player.id)) {
+                const voteBadge = document.createElement("span");
+                voteBadge.className = votedPlayerIds.has(player.id)
+                    ? "badge rounded-pill text-bg-success"
+                    : "badge rounded-pill text-bg-secondary";
+                voteBadge.textContent = votedPlayerIds.has(player.id) ? "Voted" : "Not voted";
+                badges.append(voteBadge);
+            }
+
+            item.append(name, badges);
+            gameParticipantList.append(item);
+        }
+
+        renderVoteProgress();
+    }
+
+    function renderVoteProgress() {
+        if (!currentPhase) {
+            voteProgressText.textContent = "Vote progress is unavailable.";
+            return;
+        }
+        if (currentPhase.phase === "NIGHT" && currentPhase.round === 1) {
+            voteProgressText.textContent = "No votes are cast on the first night.";
+            return;
+        }
+        if (currentPhase.phase === "NIGHT" && !voteStatusVisible) {
+            voteProgressText.textContent = phaseVotesReady
+                ? "The Mafia has finished voting."
+                : "Mafia vote progress is private. Waiting for the Mafia to finish voting.";
+            return;
+        }
+        if (!voteStatusVisible) {
+            voteProgressText.textContent = "Loading vote status…";
+            return;
+        }
+
+        const eligibleCount = eligibleVoterIds.size;
+        const votedCount = [...eligibleVoterIds].filter(id => votedPlayerIds.has(id)).length;
+        if (eligibleCount === 0) {
+            voteProgressText.textContent = "No players are currently required to vote.";
+        } else {
+            voteProgressText.textContent = phaseVotesReady
+                ? `${votedCount} of ${eligibleCount} eligible players have voted. All votes are in.`
+                : `${votedCount} of ${eligibleCount} eligible players have voted.`;
+        }
+    }
+
+    function renderMafiaTeam() {
+        const isMafia = gameStatus === "STARTED"
+            && ownPlayerDetails
+            && ownPlayerDetails.role === "MAFIA";
+        mafiaTeamPanel.hidden = !isMafia;
+        if (!isMafia) {
+            mafiaTeamList.replaceChildren();
+            mafiaTeamEmpty.hidden = true;
+            return;
+        }
+
+        const teammates = ownPlayerDetails.mafiaTeammates;
+        mafiaTeamList.replaceChildren();
+        mafiaTeamEmpty.hidden = teammates.length > 0;
+        for (const teammate of teammates) {
+            const item = document.createElement("li");
+            item.className = "list-group-item d-flex justify-content-between align-items-center gap-3";
+
+            const name = document.createElement("span");
+            name.textContent = teammate.nickname;
+
+            const teammateState = participants.get(teammate.id);
+            const teammateStatus = teammateState ? teammateState.status : teammate.status;
+            const statusBadge = document.createElement("span");
+            statusBadge.className = teammateStatus === "ALIVE"
+                ? "badge rounded-pill text-bg-success"
+                : "badge rounded-pill text-bg-danger";
+            statusBadge.textContent = teammateStatus === "ALIVE" ? "Alive" : "Dead";
+
+            item.append(name, statusBadge);
+            mafiaTeamList.append(item);
+        }
+    }
+
+    function mergeParticipants(players) {
+        if (!Array.isArray(players)) {
+            throw new Error("The server returned an invalid participant list.");
+        }
+        for (const player of players) {
+            if (player && player.id) {
+                participants.set(player.id, player);
+            }
+        }
+        renderParticipants();
+    }
+
+    function upsertParticipant(player) {
+        if (!player || !player.id || typeof player.nickname !== "string") {
+            return;
+        }
+        participants.set(player.id, player);
+        renderParticipants();
+    }
+
+    function setGameStatus(nextStatus) {
+        if (!Object.prototype.hasOwnProperty.call(gameStatusOrder, nextStatus)) {
+            throw new Error("The server returned an unknown game status.");
+        }
+        if (gameStatus !== null && gameStatusOrder[nextStatus] < gameStatusOrder[gameStatus]) {
+            return false;
+        }
+
+        gameStatus = nextStatus;
+        lobbyView.hidden = nextStatus !== "WAITING";
+        gameView.hidden = nextStatus === "WAITING";
+        gameStatusText.textContent = nextStatus === "STARTED"
+            ? "The game is in progress."
+            : nextStatus === "FINISHED"
+                ? "The game has finished."
+                : "";
+        gameStatusText.className = nextStatus === "STARTED"
+            ? "badge rounded-pill text-bg-success mb-0"
+            : nextStatus === "FINISHED"
+                ? "badge rounded-pill text-bg-dark mb-0"
+                : "badge rounded-pill text-bg-secondary mb-0";
+        updateRoomDetails();
+        updateRoomControls();
+        updateGameControls();
+        return true;
+    }
+
+    function setGamePhase(phase, round) {
+        if (typeof phase !== "string" || !Number.isInteger(round)) {
+            return;
+        }
+        const phaseName = phase.charAt(0) + phase.slice(1).toLowerCase();
+        gamePhaseText.textContent = `${phaseName}, Round ${round}`;
+    }
+
+    function renderOwnPlayerDetails() {
+        if (ownPlayerDetails && ownPlayerDetails.role) {
+            const role = ownPlayerDetails.role.toLowerCase();
+            playerRoleText.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+            playerRoleText.className = ownPlayerDetails.role === "MAFIA"
+                ? "badge rounded-pill text-bg-danger"
+                : "badge rounded-pill text-bg-primary";
+        } else {
+            playerRoleText.textContent = gameStatus === "WAITING"
+                ? "Assigned when the game starts."
+                : "Loading role…";
+            playerRoleText.className = "badge rounded-pill text-bg-secondary";
+        }
+        if (ownPlayerDetails && ownPlayerDetails.status) {
+            const playerStatus = ownPlayerDetails.status.toLowerCase();
+            playerStatusText.textContent = playerStatus.charAt(0).toUpperCase() + playerStatus.slice(1);
+            playerStatusText.className = ownPlayerDetails.status === "ALIVE"
+                ? "badge rounded-pill text-bg-success"
+                : "badge rounded-pill text-bg-danger";
+        } else {
+            playerStatusText.textContent = "Loading…";
+            playerStatusText.className = "badge rounded-pill text-bg-secondary";
+        }
+        renderMafiaTeam();
+    }
+
+    async function loadOwnPlayerDetails(forceRefresh = false) {
+        if (ownDetailsRequest) {
+            const pendingRequest = ownDetailsRequest;
+            await pendingRequest;
+            if (!forceRefresh || (ownPlayerDetails && ownPlayerDetails.role)) {
+                return ownPlayerDetails;
+            }
+            if (ownDetailsRequest === pendingRequest) {
+                ownDetailsRequest = null;
+            }
+            return loadOwnPlayerDetails(true);
+        }
+        if (!forceRefresh && ownPlayerDetails) {
+            return ownPlayerDetails;
+        }
+
+        const ownPlayer = [...participants.values()].find(player =>
+            nickname && player.nickname.toLowerCase() === nickname.toLowerCase()
+        );
+        if (!ownPlayer) {
+            throw new Error("Your player was not found in the room roster.");
+        }
+
+        const request = (async () => {
+            const response = await fetch(`/api/players/${encodeURIComponent(ownPlayer.id)}`, {
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403 || response.status === 404) {
+                    isHost = false;
+                    sessionStorage.setItem("mafiaDemoIsHost", "false");
+                    updateRoomControls();
+                }
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Player lookup failed (${response.status}).`
+                ));
+            }
+
+            const details = await response.json();
+            if (!details || details.id !== ownPlayer.id || !Array.isArray(details.mafiaTeammates)) {
+                throw new Error("The server returned details for an unexpected player.");
+            }
+            ownPlayerDetails = details;
+            isHost = details.host;
+            sessionStorage.setItem("mafiaDemoIsHost", String(isHost));
+            renderOwnPlayerDetails();
+            updateRoomControls();
+            updateGameControls();
+            subscribeToMafiaTopic();
+            return details;
+        })();
+        ownDetailsRequest = request;
+        try {
+            return await request;
+        } finally {
+            if (ownDetailsRequest === request) {
+                ownDetailsRequest = null;
+            }
+        }
+    }
+
+    function applyGameState(game) {
+        if (!game || !Array.isArray(game.players)) {
+            throw new Error("The server returned an invalid room state.");
+        }
+        if (!Number.isInteger(game.mafiaCount) || game.mafiaCount < 1) {
+            throw new Error("The server returned an invalid Mafia count.");
+        }
+        mergeParticipants(game.players);
+        mafiaCount = game.mafiaCount;
+        if (!mafiaSettingsDirty) {
+            mafiaCountInput.value = String(mafiaCount);
+        }
+        if (!setGameStatus(game.status)) {
+            updateRoomDetails();
+            updateRoomControls();
+            return;
+        }
+        if (ownPlayerDetails) {
+            const ownPlayerState = participants.get(ownPlayerDetails.id);
+            if (ownPlayerState) {
+                ownPlayerDetails = {
+                    ...ownPlayerDetails,
+                    status: ownPlayerState.status
+                };
+                renderOwnPlayerDetails();
+            }
+        }
+        const previousPhaseId = currentPhase && currentPhase.phaseId;
+        currentPhase = game.currentPhase || null;
+        const phaseChanged = !currentPhase || currentPhase.phaseId !== previousPhaseId;
+        if (phaseChanged) {
+            myVoteTargetId = null;
+            voteTargetSelect.value = "";
+            clearVoteProgress();
+        }
+        gameResult = game.result || null;
+        updateRoomDetails();
+        updateRoomControls();
+
+        if (currentPhase) {
+            setGamePhase(currentPhase.phase, currentPhase.round);
+        } else {
+            gamePhaseText.textContent = game.status === "WAITING" ? "" : "No active phase.";
+        }
+
+        updateGameControls();
+        const refreshOwnDetails = game.status !== "WAITING"
+            && (!ownPlayerDetails || !ownPlayerDetails.role);
+        loadOwnPlayerDetails(refreshOwnDetails)
+            .then(async () => {
+                await loadMyVote();
+                await loadVoteStatus();
+            })
+            .catch(error => showStatus(error.message, true));
+    }
+
+    async function loadMyVote() {
+        if (gameStatus !== "STARTED" || !currentPhase || !currentPhase.phaseId) {
+            myVoteTargetId = null;
+            updateGameControls();
+            return;
+        }
+
+        const phaseId = currentPhase.phaseId;
+        const response = await fetch(`/api/votes/me?phaseId=${encodeURIComponent(phaseId)}`, {
+            headers: { "X-Session-Token": token }
+        });
+        if (!currentPhase || currentPhase.phaseId !== phaseId) {
+            return;
+        }
+        if (response.status === 404) {
+            myVoteTargetId = null;
+            updateGameControls();
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(await responseErrorMessage(
+                response,
+                `Vote lookup failed (${response.status}).`
+            ));
+        }
+
+        const vote = await response.json();
+        if (!currentPhase || currentPhase.phaseId !== phaseId) {
+            return;
+        }
+        if (!vote || vote.phaseId !== phaseId || typeof vote.targetId !== "string") {
+            throw new Error("The server returned an invalid vote.");
+        }
+        myVoteTargetId = vote.targetId;
+        updateGameControls();
+    }
+
+    async function loadVoteStatus() {
+        if (gameStatus !== "STARTED" || !currentPhase || !currentPhase.phaseId) {
+            clearVoteProgress();
+            updateGameControls();
+            return;
+        }
+
+        const phaseId = currentPhase.phaseId;
+        const response = await fetch(`/api/votes/status?phaseId=${encodeURIComponent(phaseId)}`, {
+            headers: { "X-Session-Token": token }
+        });
+        if (!currentPhase || currentPhase.phaseId !== phaseId) {
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(await responseErrorMessage(
+                response,
+                `Vote status lookup failed (${response.status}).`
+            ));
+        }
+
+        const voteStatus = await response.json();
+        if (!voteStatus
+            || voteStatus.phaseId !== phaseId
+            || !Array.isArray(voteStatus.eligibleVoterIds)
+            || !Array.isArray(voteStatus.votedPlayerIds)
+            || typeof voteStatus.statusVisible !== "boolean"
+            || typeof voteStatus.readyToAdvance !== "boolean"
+            || voteStatus.eligibleVoterIds.some(id => typeof id !== "string")
+            || voteStatus.votedPlayerIds.some(id => typeof id !== "string")) {
+            throw new Error("The server returned invalid vote status.");
+        }
+
+        eligibleVoterIds = new Set(voteStatus.eligibleVoterIds);
+        votedPlayerIds = new Set(voteStatus.votedPlayerIds);
+        voteStatusVisible = voteStatus.statusVisible;
+        phaseVotesReady = voteStatus.readyToAdvance;
+        renderGameParticipants();
+        updateGameControls();
+    }
+
+
+    async function loadRoomState() {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}`);
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 404) {
+                returnToStartPage();
+                return;
+            }
+            throw new Error(await responseErrorMessage(
+                response,
+                `Room lookup failed (${response.status}).`
+            ));
+        }
+        applyGameState(await response.json());
+    }
+
+    function appendChatMessage(message) {
+        const eventId = String(message.id);
+        if (seenEventIds.has(eventId)) {
+            return;
+        }
+        seenEventIds.add(eventId);
+
+        const time = message.createdAt
+            ? `${new Date(message.createdAt).toLocaleTimeString()} `
+            : "";
+        const item = document.createElement("li");
+        if (message.system) {
+            item.className = "list-group-item list-group-item-warning";
+            if (time) {
+                const timestamp = document.createElement("span");
+                timestamp.className = "small text-body-secondary me-2";
+                timestamp.textContent = time.trim();
+                item.append(timestamp);
+            }
+            const label = document.createElement("span");
+            label.className = "badge text-bg-warning me-2";
+            label.textContent = "Game";
+            item.append(label);
+
+            const text = document.createElement("strong");
+            text.className = "fw-bold";
+            text.textContent = message.message;
+            item.append(text);
+        } else {
+            item.className = "list-group-item";
+            if (time) {
+                const timestamp = document.createElement("span");
+                timestamp.className = "small text-body-secondary me-2";
+                timestamp.textContent = time.trim();
+                item.append(timestamp);
+            }
+            const username = document.createElement("strong");
+            username.className = "fw-bold";
+            username.textContent = `${message.username}:`;
+            item.append(username, document.createTextNode(` ${message.message}`));
+        }
+        messages.append(item);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function appendEvent(event) {
+        if (event.type === "CHAT") {
+            appendChatMessage(event.data);
+        }
+    }
+
+    function subscribeToMafiaTopic() {
+        if (!client
+            || !client.connected
+            || !ownPlayerDetails
+            || ownPlayerDetails.role !== "MAFIA"
+            || mafiaSubscription) {
+            return;
+        }
+
+        mafiaSubscription = client.subscribe(`/game-session/game/${gameId}/mafia`, frame => {
+            const event = JSON.parse(frame.body);
+            if (event.type !== "VOTE_UPDATED"
+                || !event.data
+                || !currentPhase
+                || currentPhase.phase !== "NIGHT"
+                || event.data.phaseId !== currentPhase.phaseId) {
+                return;
+            }
+
+            if (typeof event.data.voterId === "string") {
+                votedPlayerIds.add(event.data.voterId);
+            }
+            if (ownPlayerDetails && event.data.voterId === ownPlayerDetails.id) {
+                myVoteTargetId = event.data.targetId;
+            }
+            renderGameParticipants();
+            updateGameControls();
+        });
+    }
+
+    function clearRoomSession() {
+        for (const key of [
+            "mafiaDemoGameId",
+            "mafiaDemoJoinCode",
+            "mafiaDemoNickname",
+            "mafiaDemoSessionToken",
+            "mafiaDemoIsHost"
+        ]) {
+            sessionStorage.removeItem(key);
+        }
+    }
+
+    function returnToStartPage() {
+        clearRoomSession();
+        window.location.replace("/?notice=room-closed");
+    }
+
+    async function loadHistory() {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
+            headers: { "X-Session-Token": token }
+        });
+        const body = await response.json();
+        if (!response.ok) {
+            throw new Error(body.detail || `History request failed (${response.status}).`);
+        }
+        for (const message of body) {
+            appendChatMessage(message);
+        }
+    }
+
+    if (!gameId || !joinCode || !nickname || !token) {
+        showStatus("This demo tab has no room session. Create or join a room first.", true);
+    } else {
+        updateRoomDetails();
+        inviteLink.href = `${window.location.origin}/?join=${encodeURIComponent(joinCode)}`;
+        inviteLink.textContent = inviteLink.href;
+        copyInviteButton.disabled = false;
+        loadRoomState().catch(error => showStatus(error.message, true));
+
+        client = new StompJs.Client({
+            webSocketFactory: () => new SockJS("/ws"),
+            connectHeaders: { "X-Session-Token": token },
+            reconnectDelay: 5000,
+            onConnect: () => {
+                mafiaSubscription = null;
+                showStatus("Connected to the room.");
+                sendChat.disabled = false;
+                client.subscribe(`/game-session/game/${gameId}`, frame => {
+                    const event = JSON.parse(frame.body);
+                    if (event.type === "ROOM_CLOSED") {
+                        returnToStartPage();
+                        return;
+                    }
+                    if (event.type === "PLAYER_JOINED") {
+                        upsertParticipant(event.data);
+                    } else if (event.type === "GAME_SETTINGS_UPDATED" && event.data) {
+                        if (!Number.isInteger(event.data.mafiaCount) || event.data.mafiaCount < 1) {
+                            showStatus("The server sent an invalid Mafia count update.", true);
+                        } else {
+                            mafiaCount = event.data.mafiaCount;
+                            if (!mafiaSettingsDirty) {
+                                mafiaCountInput.value = String(mafiaCount);
+                            }
+                            updateRoomDetails();
+                            updateRoomControls();
+                        }
+                    } else if (event.type === "GAME_STARTED") {
+                        setGameStatus("STARTED");
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    } else if (event.type === "PHASE_CHANGED" && event.data) {
+                        currentPhase = null;
+                        myVoteTargetId = null;
+                        clearVoteProgress();
+                        setGamePhase(event.data.phase, event.data.round);
+                        updateGameControls();
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    } else if (event.type === "VOTE_PROGRESS"
+                        && event.data
+                        && currentPhase
+                        && event.data.phaseId === currentPhase.phaseId
+                        && typeof event.data.readyToAdvance === "boolean") {
+                        phaseVotesReady = event.data.readyToAdvance;
+                        renderVoteProgress();
+                        updateGameControls();
+                    } else if (event.type === "VOTE_UPDATED"
+                        && event.data
+                        && currentPhase
+                        && event.data.phaseId === currentPhase.phaseId) {
+                        if (currentPhase.phase === "DAY" && typeof event.data.voterId === "string") {
+                            votedPlayerIds.add(event.data.voterId);
+                        }
+                        if (ownPlayerDetails && event.data.voterId === ownPlayerDetails.id) {
+                            myVoteTargetId = event.data.targetId;
+                        }
+                        renderGameParticipants();
+                        updateGameControls();
+                    } else if (event.type === "GAME_ENDED") {
+                        setGameStatus("FINISHED");
+                        currentPhase = null;
+                        myVoteTargetId = null;
+                        clearVoteProgress();
+                        updateGameControls();
+                        loadRoomState().catch(error => showStatus(error.message, true));
+                    }
+                    appendEvent(event);
+                });
+                subscribeToMafiaTopic();
+                loadRoomState().catch(error => showStatus(error.message, true));
+                loadHistory().catch(error => showStatus(error.message, true));
+            },
+            onStompError: frame => {
+                showStatus(`STOMP error: ${frame.headers.message || "connection rejected"}`, true);
+                sendChat.disabled = true;
+            },
+            onWebSocketClose: () => {
+                mafiaSubscription = null;
+                showStatus("Disconnected. Reconnecting…");
+                sendChat.disabled = true;
+            }
+        });
+        client.activate();
+    }
+
+    copyInviteButton.addEventListener("click", async () => {
+        if (!inviteLink.href || copyInviteButton.disabled) {
+            return;
+        }
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+            const message = "Clipboard access is unavailable. Copy the invite link directly instead.";
+            inviteCopyFeedback.textContent = message;
+            showStatus(message, true);
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(inviteLink.href);
+            copyInviteButton.textContent = "Copied!";
+            inviteCopyFeedback.textContent = "Invite link copied to the clipboard.";
+            if (copyFeedbackTimeout !== null) {
+                window.clearTimeout(copyFeedbackTimeout);
+            }
+            copyFeedbackTimeout = window.setTimeout(() => {
+                copyInviteButton.textContent = "Copy";
+                inviteCopyFeedback.textContent = "";
+                copyFeedbackTimeout = null;
+            }, 2000);
+        } catch (error) {
+            const detail = error && error.message ? ` ${error.message}` : "";
+            const message = `Could not copy the invite link.${detail}`;
+            inviteCopyFeedback.textContent = message;
+            showStatus(message, true);
+        }
+    });
+
+    voteTargetSelect.addEventListener("change", renderVotingControls);
+
+    document.getElementById("vote-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const targetId = voteTargetSelect.value;
+        if (!gameId || !token || !currentPhase || !ownPlayerDetails
+            || gameStatus !== "STARTED"
+            || ownPlayerDetails.status !== "ALIVE"
+            || !targetId
+            || submittingVote) {
+            return;
+        }
+
+        const phaseId = currentPhase.phaseId;
+        const hasAssignedRole = ownPlayerDetails.role === "MAFIA"
+            || ownPlayerDetails.role === "CIVILIAN";
+        const canVoteInPhase = hasAssignedRole
+            && (currentPhase.phase === "DAY"
+                || (currentPhase.phase === "NIGHT"
+                && currentPhase.round > 1
+                && ownPlayerDetails.role === "MAFIA"));
+        const target = participants.get(targetId);
+        if (!canVoteInPhase
+            || !target
+            || target.status !== "ALIVE"
+            || target.id === ownPlayerDetails.id) {
+            updateGameControls();
+            return;
+        }
+
+        submittingVote = true;
+        updateGameControls();
+        let failureMessage = null;
+        try {
+            const response = await fetch("/api/votes", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({
+                    phaseId,
+                    targetId
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Vote request failed (${response.status}).`
+                ));
+            }
+            if (currentPhase && currentPhase.phaseId === phaseId) {
+                myVoteTargetId = targetId;
+                if (eligibleVoterIds.has(ownPlayerDetails.id)) {
+                    votedPlayerIds.add(ownPlayerDetails.id);
+                    renderGameParticipants();
+                }
+            }
+        } catch (error) {
+            failureMessage = error.message;
+        } finally {
+            submittingVote = false;
+            updateGameControls();
+        }
+        if (failureMessage) {
+            try {
+                await loadRoomState();
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+            showVotingFeedback(`Could not submit vote: ${failureMessage}`, true);
+        }
+    });
+
+    mafiaCountInput.addEventListener("input", () => {
+        mafiaSettingsDirty = mafiaCountInput.value !== String(mafiaCount);
+        showMafiaSettingsFeedback("");
+        updateRoomControls();
+    });
+
+    mafiaSettingsForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!gameId || !token || !isHost || gameStatus !== "WAITING" || savingMafiaCount) {
+            return;
+        }
+
+        const requestedMafiaCount = Number(mafiaCountInput.value);
+        const maximum = maximumMafiaCount();
+        if (!Number.isInteger(requestedMafiaCount)
+            || requestedMafiaCount < 1
+            || requestedMafiaCount > maximum) {
+            showMafiaSettingsFeedback(
+                `Choose a whole number from 1 to ${maximum} for the current roster.`,
+                true
+            );
+            updateRoomControls();
+            return;
+        }
+
+        savingMafiaCount = true;
+        showMafiaSettingsFeedback("");
+        updateRoomControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/settings`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({ mafiaCount: requestedMafiaCount })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Settings update failed (${response.status}).`
+                ));
+            }
+
+            const updatedGame = await response.json();
+            if (!updatedGame
+                || !Number.isInteger(updatedGame.mafiaCount)
+                || updatedGame.mafiaCount !== requestedMafiaCount) {
+                throw new Error("The server returned an invalid Mafia count.");
+            }
+
+            mafiaCount = updatedGame.mafiaCount;
+            mafiaCountInput.value = String(mafiaCount);
+            mafiaSettingsDirty = false;
+            showMafiaSettingsFeedback("Mafia count saved.");
+            updateRoomDetails();
+        } catch (error) {
+            showMafiaSettingsFeedback(`Could not save Mafia count: ${error.message}`, true);
+        } finally {
+            savingMafiaCount = false;
+            updateRoomControls();
+        }
+    });
+
+    advancePhaseButton.addEventListener("click", async () => {
+        if (!gameId || !token || !isHost || !currentPhase
+            || gameStatus !== "STARTED"
+            || !phaseVotesReady
+            || advancingPhase) {
+            return;
+        }
+
+        advancingPhase = true;
+        showAdvanceFeedback("");
+        updateGameControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/advance`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Session-Token": token
+                },
+                body: JSON.stringify({
+                    expectedType: currentPhase.phase,
+                    expectedRound: currentPhase.round
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Phase advance failed (${response.status}).`
+                ));
+            }
+            await loadRoomState();
+        } catch (error) {
+            showAdvanceFeedback(`Could not advance the phase: ${error.message}`, true);
+        } finally {
+            advancingPhase = false;
+            updateGameControls();
+        }
+    });
+
+    startGameButton.addEventListener("click", async () => {
+        if (!gameId || !token || !isHost || gameStatus !== "WAITING" || startingGame) {
+            return;
+        }
+        const startError = getStartConfigurationError();
+        if (startError) {
+            showStartFeedback(startError, true);
+            updateRoomControls();
+            return;
+        }
+        startingGame = true;
+        showStartFeedback("");
+        updateRoomControls();
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/start`, {
+                method: "POST",
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                throw new Error(await responseErrorMessage(
+                    response,
+                    `Start request failed (${response.status}).`
+                ));
+            }
+            setGameStatus("STARTED");
+        } catch (error) {
+            if (gameStatus === "WAITING") {
+                showStartFeedback(`Could not start the game: ${error.message}`, true);
+            }
+        } finally {
+            startingGame = false;
+            updateRoomControls();
+        }
+        if (gameStatus !== "WAITING") {
+            loadRoomState().catch(error => showStatus(error.message, true));
+        }
+    });
+
+    cancelRoom.addEventListener("click", async () => {
+        if (!gameId || !token || !isHost) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+                method: "DELETE",
+                headers: { "X-Session-Token": token }
+            });
+            if (!response.ok) {
+                throw new Error(`Room cancellation failed (${response.status}).`);
+            }
+            returnToStartPage();
+        } catch (error) {
+            showStatus(error.message, true);
+        }
+    });
+
+    document.getElementById("chat-form").addEventListener("submit", event => {
+        event.preventDefault();
+        const input = document.getElementById("chat-message");
+        const text = input.value.trim();
+        if (!client || !client.connected || !text) {
+            return;
+        }
+        client.publish({
+            destination: `/app/${gameId}/send-message`,
+            body: JSON.stringify({ message: text, username: nickname })
+        });
+        input.value = "";
+    });
+
+</script>
+</body>
+</html>

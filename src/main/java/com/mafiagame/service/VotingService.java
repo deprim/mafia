@@ -1,5 +1,13 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.ApiException;
+import com.mafiagame.exception.GameAccessDeniedException;
+import com.mafiagame.exception.GameConflictException;
+import com.mafiagame.exception.InvalidRequestException;
+import com.mafiagame.exception.InvalidSessionException;
+import com.mafiagame.exception.ResourceNotFoundException;
+import com.mafiagame.dto.VoteResponse;
+import com.mafiagame.dto.VoteStatusResponse;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -8,22 +16,18 @@ import com.mafiagame.repository.GamePhaseRepository;
 import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.repository.VoteRepository;
+import com.mafiagame.utils.enums.GamePhaseStatus;
 import com.mafiagame.utils.enums.GameStatus;
+import com.mafiagame.utils.enums.PhaseType;
+import com.mafiagame.utils.enums.PlayerRole;
 import com.mafiagame.utils.enums.PlayerStatus;
 import com.mafiagame.utils.enums.VotingType;
+import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.websocket.GameBroadcaster;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import com.mafiagame.dto.VoteResponse;
-import com.mafiagame.utils.SessionTokenGenerator;
-import com.mafiagame.utils.enums.GamePhaseStatus;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-import com.mafiagame.utils.enums.PhaseType;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -51,57 +55,45 @@ public class VotingService {
      * @param phaseId the identifier of the game phase in which the vote is being cast
      * @param targetId the identifier of the player selected as the vote target
      * @param rawToken the authentication token used to identify the voting player
-     * @throws ResponseStatusException if the phase, game, or target cannot be found, if the voter is
+     * @throws ApiException if the phase, game, or target cannot be found, if the voter is
      *         not part of the game, if the game is not running, if the phase is no longer open, or if
      *         the vote is invalid
      */
     @Transactional
     public void castVote(UUID phaseId, UUID targetId, String rawToken) {
         GamePhase requestedPhase = phases.findById(phaseId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Phase not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Phase not found"));
 
         Game game = games.findByIdForUpdate(requestedPhase.getGame().getId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Game not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Game not found"));
 
         Player voter = requirePlayer(rawToken);
 
-        if (!voter.getGame().getId().equals(game.getId())) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "Player is not part of this room"
-            );
-        }
+        if (!voter.getGame().getId().equals(game.getId()))
+            throw new GameAccessDeniedException("Player is not part of this room");
 
-        if (game.getStatus() != GameStatus.STARTED) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT, "Game is not running"
-            );
-        }
+        if (game.getStatus() != GameStatus.STARTED)
+            throw new GameConflictException("Game is not running");
 
-        GamePhase phase = phases.findByGameIdAndStatus(
-                        game.getId(), GamePhaseStatus.OPENED
-                ).filter(current -> current.getId().equals(phaseId))
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.CONFLICT, "This phase is no longer open"
-                ));
+        GamePhase phase = phases.findByGameIdAndStatus(game.getId(), GamePhaseStatus.OPENED)
+                .filter(current -> current.getId().equals(phaseId))
+                .orElseThrow(() -> new GameConflictException("This phase is no longer open"));
 
         Player target = players.findById(targetId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Target not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Target not found"));
 
         validateVote(phase, voter, target);
 
-        Vote vote = votes.findByPhaseIdAndVoterId(phaseId, voter.getId())
-                .orElseGet(() -> new Vote(phase, voter, target));
+        Optional<Vote> existingVote = votes.findByPhaseIdAndVoterId(phaseId, voter.getId());
+        boolean changedVote = existingVote
+                .map(vote -> !vote.getTarget().getId().equals(target.getId()))
+                .orElse(false);
+        Vote vote = existingVote.orElseGet(() -> new Vote(phase, voter, target));
 
         vote.setTarget(target);
         votes.saveAndFlush(vote);
 
-        publishVoteAfterCommit(phase, voter, target);
+        publishVoteAfterCommit(phase, voter, target, changedVote);
     }
 
     /**
@@ -116,14 +108,54 @@ public class VotingService {
         Player player = requirePlayer(rawToken);
 
         Vote vote = votes.findByPhaseIdAndVoterId(phaseId, player.getId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "You have no vote in this phase"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("You have no vote in this phase"));
 
-        return new VoteResponse(
-                vote.getPhase().getId(),
-                vote.getTarget().getId()
+        return new VoteResponse(vote.getPhase().getId(), vote.getTarget().getId());
+    }
+
+    @Transactional
+    public VoteStatusResponse getVoteStatus(UUID phaseId, String rawToken) {
+        Player viewer = requirePlayer(rawToken);
+        GamePhase phase = phases.findById(phaseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Phase not found"));
+
+        if (!viewer.getGame().getId().equals(phase.getGame().getId()))
+            throw new GameAccessDeniedException("Player is not part of this room");
+        if (phase.getStatus() != GamePhaseStatus.OPENED || phase.getGame().getStatus() != GameStatus.STARTED)
+            throw new GameConflictException("This phase is no longer open");
+
+        List<Player> eligibleVoters = eligibleVoters(phase);
+        List<UUID> eligibleVoterIds = eligibleVoters.stream()
+                .map(Player::getId)
+                .toList();
+        Set<UUID> submittedVoteIds = votes.findByPhaseId(phaseId).stream()
+                .map(vote -> vote.getVoter().getId())
+                .collect(Collectors.toSet());
+        boolean readyToAdvance = eligibleVoterIds.stream().allMatch(submittedVoteIds::contains);
+        boolean statusVisible = phase.getPhaseType() == PhaseType.DAY
+                || (phase.getPhaseType() == PhaseType.NIGHT
+                && phase.getRoundNumber() > 1
+                && viewer.getRole() == PlayerRole.MAFIA);
+        List<UUID> visibleEligibleVoterIds = statusVisible ? eligibleVoterIds : List.of();
+        List<UUID> visibleVotedPlayerIds = statusVisible
+                ? eligibleVoterIds.stream().filter(submittedVoteIds::contains).toList()
+                : List.of();
+
+        return new VoteStatusResponse(
+                phaseId,
+                visibleEligibleVoterIds,
+                visibleVotedPlayerIds,
+                statusVisible,
+                readyToAdvance
         );
+    }
+
+    public boolean allEligibleVotersHaveVoted(GamePhase phase) {
+        Set<UUID> submittedVoteIds = votes.findByPhaseId(phase.getId()).stream()
+                .map(vote -> vote.getVoter().getId())
+                .collect(Collectors.toSet());
+        return eligibleVoters(phase).stream()
+                .allMatch(player -> submittedVoteIds.contains(player.getId()));
     }
 
 
@@ -139,6 +171,10 @@ public class VotingService {
      */
     @Transactional
     public Optional<UUID> closeVoting(GamePhase phase) {
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1) {
+            return Optional.empty();
+        }
+
         Map<UUID, Long> counts = votes.findByPhaseId(phase.getId()).stream()
                 .collect(Collectors.groupingBy(v -> v.getTarget().getId(), Collectors.counting()));
         if (counts.isEmpty()) return Optional.empty();
@@ -157,20 +193,14 @@ public class VotingService {
      *
      * @param rawToken the raw session token to validate and look up
      * @return the player associated with the session token
-     * @throws ResponseStatusException if the token is null, blank, or does not match an existing player session
+     * @throws ApiException if the token is null, blank, or does not match an existing player session
      */
     private Player requirePlayer(String rawToken) {
-        if (rawToken == null || rawToken.isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED, "A session token is required"
-            );
-        }
+        if (rawToken == null || rawToken.isBlank())
+            throw new InvalidSessionException("A session token is required");
 
-        return players.findBySessionTokenHash(
-                SessionTokenGenerator.hashToken(rawToken)
-        ).orElseThrow(() -> new ResponseStatusException(
-                HttpStatus.UNAUTHORIZED, "Invalid session token"
-        ));
+        return players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawToken))
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
     }
 
     /**
@@ -184,41 +214,42 @@ public class VotingService {
      * @param phase the current game phase in which the vote is being cast
      * @param voter the player attempting to cast the vote
      * @param target the player selected as the vote target
-     * @throws ResponseStatusException if the vote is invalid for the current game,
+     * @throws ApiException if the vote is invalid for the current game,
      *         player status, target selection, phase, or voter role
      */
     private void validateVote(GamePhase phase, Player voter, Player target) {
         UUID gameId = phase.getGame().getId();
 
-        if (!target.getGame().getId().equals(gameId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "Target is not part of this room"
-            );
-        }
+        if (!target.getGame().getId().equals(gameId))
+            throw new GameAccessDeniedException("Target is not part of this room");
 
-        if (voter.getStatus() != PlayerStatus.ALIVE
-                || target.getStatus() != PlayerStatus.ALIVE) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT, "Voter and target must be alive"
-            );
-        }
+        if (voter.getStatus() != PlayerStatus.ALIVE || target.getStatus() != PlayerStatus.ALIVE)
+            throw new GameConflictException("Voter and target must be alive");
 
-        if (voter.getId().equals(target.getId())) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "You cannot vote for yourself"
-            );
+        if (voter.getId().equals(target.getId()))
+            throw new InvalidRequestException("You cannot vote for yourself");
+
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1)
+            throw new GameConflictException("Voting is unavailable on the first night");
+
+        VotingType type = VotingType.forPhase(phase.getPhaseType())
+                .orElseThrow(() -> new GameConflictException("Voting is unavailable in this phase"));
+
+        if (!type.canVote(voter.getRole()))
+            throw new GameAccessDeniedException("You cannot vote in this phase");
+    }
+
+    private List<Player> eligibleVoters(GamePhase phase) {
+        if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1) {
+            return List.of();
         }
 
         VotingType type = VotingType.forPhase(phase.getPhaseType())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.CONFLICT, "Voting is unavailable in this phase"
-                ));
-
-        if (!type.canVote(voter.getRole())) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "You cannot vote in this phase"
-            );
-        }
+                .orElseThrow(() -> new IllegalStateException("Voting is unavailable in this phase"));
+        return players.findByGameId(phase.getGame().getId()).stream()
+                .filter(player -> player.getStatus() == PlayerStatus.ALIVE)
+                .filter(player -> type.canVote(player.getRole()))
+                .toList();
     }
 
     /**
@@ -233,11 +264,7 @@ public class VotingService {
      * @param voter the player who cast the vote
      * @param target the player selected as the vote target
      */
-    private void publishVoteAfterCommit(
-            GamePhase phase,
-            Player voter,
-            Player target
-    ) {
+    private void publishVoteAfterCommit(GamePhase phase, Player voter, Player target, boolean changedVote) {
         UUID gameId = phase.getGame().getId();
         PhaseType phaseType = phase.getPhaseType();
 
@@ -247,20 +274,25 @@ public class VotingService {
                 "targetId", target.getId()
         );
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        switch (phaseType) {
-                            case DAY -> broadcaster.toGame(
-                                    gameId, "VOTE_UPDATED", data
-                            );
-                            case NIGHT -> broadcaster.toMafia(
-                                    gameId, "VOTE_UPDATED", data
-                            );
-                        }
-                    }
-                }
+        switch (phaseType) {
+            case DAY -> broadcaster.toGameAndChatAfterCommit(
+                    gameId,
+                    "VOTE_UPDATED",
+                    data,
+                    voter.getNickname()
+                            + (changedVote ? " changed their vote to " : " voted for ")
+                            + target.getNickname()
+                            + "."
+            );
+            case NIGHT -> broadcaster.toMafiaAfterCommit(gameId, "VOTE_UPDATED", data);
+        }
+        broadcaster.toGameAfterCommit(
+                gameId,
+                "VOTE_PROGRESS",
+                Map.of(
+                        "phaseId", phase.getId(),
+                        "readyToAdvance", allEligibleVotersHaveVoted(phase)
+                )
         );
     }
 }

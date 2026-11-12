@@ -1,6 +1,9 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.GameConflictException;
+import com.mafiagame.exception.GameNotFoundException;
 import com.mafiagame.dto.EliminationResult;
+import com.mafiagame.dto.GameResponse;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.GameResult;
@@ -10,10 +13,8 @@ import com.mafiagame.utils.enums.*;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -31,22 +32,36 @@ public class GameLifecycleService {
     private final VotingService voting;
     private final GameResultRepository gameResultRepository;
 
-
     @Transactional
     public void startGame(UUID gameId, String rawSessionToken) {
         Game game = lock(gameId);
-
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.WAITING)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
+        if (game.getStatus() != GameStatus.WAITING) throw new GameConflictException("Only waiting games can be started");
 
         playerService.assignRoles(gameId, game.getMafiaCount());
         game.setStatus(GameStatus.STARTED);
         games.save(game);
         log.info("Game {} started", gameId);
 
-        broadcaster.toGameAfterCommit(gameId, "GAME_STARTED", Map.of());
+        broadcaster.toGameAndChatAfterCommit(gameId, "GAME_STARTED", Map.of(), "The game has started.");
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, 1);   // the game always begins with night of round 1
+    }
+
+    @Transactional
+    public GameResponse updateMafiaCount(UUID gameId, String rawSessionToken, Integer mafiaCount) {
+        Game game = lock(gameId);
+        playerService.requireHost(gameId, rawSessionToken);
+        if (game.getStatus() != GameStatus.WAITING) {
+            throw new GameConflictException("Game settings can only be changed before the game starts");
+        }
+
+        playerService.validateMafiaCountForGame(gameId, mafiaCount);
+        game.setMafiaCount(mafiaCount);
+        games.save(game);
+
+        GameResponse response = GameResponse.from(game);
+        broadcaster.toGameAfterCommit(gameId, "GAME_SETTINGS_UPDATED", response);
+        return response;
     }
 
     /**
@@ -57,20 +72,24 @@ public class GameLifecycleService {
     public void advance(UUID gameId, String rawSessionToken, PhaseType expectedType, int expectedRound) {
         Game game = lock(gameId);
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.STARTED) return;   // WAITING or FINISHED: nothing to advance
+        if (game.getStatus() != GameStatus.STARTED) throw new GameConflictException("Game has not active status: " + game.getStatus());   // WAITING or FINISHED: nothing to advance
 
         GamePhase current = gamePhaseService.currentPhase(game);
         if (current.getPhaseType() != expectedType || current.getRoundNumber() != expectedRound) {
             log.debug("Ignoring stale advance for game {}", gameId);
-            return;
+            throw new GameConflictException("Ignoring stale advance for game " + gameId);
+        }
+        if (!voting.allEligibleVotersHaveVoted(current)) {
+            throw new GameConflictException(
+                    "All players eligible to vote must vote before the phase can advance"
+            );
         }
 
         log.info("Advancing game {} to phase {} round {}", gameId, current.getPhaseType(), current.getRoundNumber());
         switch (current.getPhaseType()) {
             case NIGHT -> resolveNight(game, current);
             case DAY -> resolveDay(game, current);
-            default -> {
-            }
+            default -> throw new IllegalStateException("Unexpected value: " + current.getPhaseType());
         }
     }
 
@@ -94,7 +113,12 @@ public class GameLifecycleService {
 
         //the priority not found, seems like skip
         EliminationResult result = new EliminationResult(victimId == null ? null : playerService.kill(victimId, current));
-        broadcaster.toGameAfterCommit(game.getId(), "VOTE_RESULT", result);
+        broadcaster.toGameAndChatAfterCommit(
+                game.getId(),
+                "VOTE_RESULT",
+                result,
+                voteResultMessage(current, result)
+        );
 
         gamePhaseService.endPhase(current);
 
@@ -121,10 +145,13 @@ public class GameLifecycleService {
         UUID executedId = voting.closeVoting(current).orElse(null);   // null = no votes or a tie, nobody dies
         log.debug("Phase {} hase no elimination in game with ID {}", current.getPhaseType(), game.getId());
 
-
         EliminationResult result = new EliminationResult(executedId == null ? null : playerService.kill(executedId, current));
-        broadcaster.toGameAfterCommit(game.getId(), "VOTE_RESULT", result);
-
+        broadcaster.toGameAndChatAfterCommit(
+                game.getId(),
+                "VOTE_RESULT",
+                result,
+                voteResultMessage(current, result)
+        );
         gamePhaseService.endPhase(current);
 
         //execute validation of the game finishing conditions and do not generate next phase
@@ -132,7 +159,6 @@ public class GameLifecycleService {
 
         gamePhaseService.enterPhase(game, PhaseType.NIGHT, current.getRoundNumber() + 1);   // the new round starts with night
     }
-
 
     /**
      * Checks whether the specified game has reached a winning condition and finishes it if so.
@@ -157,27 +183,34 @@ public class GameLifecycleService {
         return false;
     }
 
-
     private void endGame(Game game, Team winner) {
-        if (game.getStatus() == GameStatus.FINISHED) {
-            return;
-        }
+        if (game.getStatus() == GameStatus.FINISHED) return;
 
         game.setStatus(GameStatus.FINISHED);
         games.save(game);
 
         gameResultRepository.save(new GameResult(game, winner));
 
-        broadcaster.toGameAfterCommit(
+        String winningTeam = winner == Team.MAFIA ? "Mafia" : "Civilian";
+        broadcaster.toGameAndChatAfterCommit(
                 game.getId(),
                 "GAME_ENDED",
-                Map.of("winner", winner)
+                Map.of("winner", winner),
+                "The " + winningTeam + " team has won the game."
         );
         log.info("Game {} finished, winner: {}", game.getId(), winner);
     }
 
+    private String voteResultMessage(GamePhase phase, EliminationResult result) {
+        String phaseName = phase.getPhaseType() == PhaseType.NIGHT ? "night" : "day";
+        String phaseDescription = "the " + phaseName + " phase of round " + phase.getRoundNumber();
+        return result.username() == null
+                ? "No player was eliminated during " + phaseDescription + "."
+                : result.username() + " was eliminated during " + phaseDescription + ".";
+    }
+
     private Game lock(UUID gameId) {
         return games.findByIdForUpdate(gameId)
-                .orElseThrow(() -> new IllegalArgumentException("Game not found"));
+                .orElseThrow(() -> new GameNotFoundException("Game not found"));
     }
 }

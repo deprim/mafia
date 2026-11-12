@@ -61,7 +61,7 @@ Dashboard statistics can be calculated from `GAME`, `PLAYER`, and `GAME_RESULT`;
 - Enforce at most one open phase per game and one occurrence of each phase type per round. Use database constraints where practical and validate game transitions in the service layer as well.
 - Keep the `ELIMINATION` uniqueness constraints: a phase eliminates no more than one player, and a player can be eliminated only once. Update `PLAYER.status` and insert the elimination record in the same transaction so the status and history cannot disagree.
 - Use constrained enum-like values for game/player/phase statuses, roles, phase types, and winning team. Prefer timezone-aware timestamps (stored in UTC) for a game played by people in different locations.
-- At game start, require at least one Mafia and one Civilian, with fewer Mafia than Civilians. The exact minimum roster and any tighter Mafia-count cap are not specified yet.
+- At game start, require at least four players and at least one more Civilian than Mafia. For a roster of `playerCount`, the maximum Mafia count is `floor((playerCount - 1) / 2)`.
 
 ## Application and API design
 
@@ -71,7 +71,7 @@ Current and illustrative routes (other planned paths may be finalized during dev
 
 | Area | Example operations |
 |---|---|
-| Room lifecycle | `POST /api/games` creates a room and its host-player; `GET /api/games/{joinCode}` returns a safe public room view; `PATCH /api/games/{id}` updates lobby settings; `DELETE /api/games/{id}` cancels/deletes a lobby. |
+| Room lifecycle | `POST /api/games` creates a room and its host-player with one Mafia by default; `GET /api/games/{id}` returns a safe public room view; host-only `PUT /api/games/{id}/settings` updates waiting-room settings; `DELETE /api/games/{id}` cancels/deletes a lobby. |
 | Guest players | `POST /api/games/{joinCode}/players` joins a guest; a player-specific endpoint returns that guest's role/status only. |
 | Game actions | `POST /api/games/{id}/start` starts a waiting game with the host's `X-Session-Token`; host-only phase-advance operations; player-only vote operations. Validate each operation against the current phase and player status. |
 | Results | Read the completed game's result without exposing ballots or hidden roles. |

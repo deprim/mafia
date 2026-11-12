@@ -17,13 +17,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final AuthInterceptor interceptor;
 
-    //TODO: configure message broker and and register stomp endpoints
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         config.enableSimpleBroker("/game-session");
-//        config.enableSimpleBroker("/queue", "/topic");
         config.setApplicationDestinationPrefixes("/app");
-//        config.setUserDestinationPrefix("/user");
     }
 
     @Override

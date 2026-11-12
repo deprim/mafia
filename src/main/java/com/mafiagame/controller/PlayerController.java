@@ -6,6 +6,7 @@ import com.mafiagame.dto.JoinGameResponse;
 import com.mafiagame.dto.PlayerDetailsResponse;
 import com.mafiagame.service.GameService;
 import com.mafiagame.service.PlayerService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +30,7 @@ public class PlayerController {
 
     @PostMapping
     public ResponseEntity<JoinGameResponse> addPlayer(
-            @RequestBody JoinGameRequest request) {
+            @Valid @RequestBody JoinGameRequest request) {
         var result = gameService.joinGame(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header("X-Session-Token", result.rawToken())

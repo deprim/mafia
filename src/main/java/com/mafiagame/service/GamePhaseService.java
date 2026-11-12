@@ -23,15 +23,14 @@ public class GamePhaseService {
     private final GamePhaseRepository phases;
     private final GameBroadcaster broadcaster;
 
-
     private static final String ROUND_TAG = "round";
 
     /**
      * Starts a new phase for the specified game and notifies all game participants
      * that the phase has changed.
      *
-     * @param game the game for which the new phase is being entered
-     * @param type the type of phase to enter
+     * @param game  the game for which the new phase is being entered
+     * @param type  the type of phase to enter
      * @param round the round number associated with the new phase
      */
     @Transactional
@@ -39,23 +38,22 @@ public class GamePhaseService {
         GamePhase phase = new GamePhase(game, round, type);
         phases.save(phase);
 
-        broadcaster.toGameAfterCommit(
+        String phaseName = type == PhaseType.NIGHT ? "Night" : "Day";
+        broadcaster.toGameAndChatAfterCommit(
                 game.getId(),
                 "PHASE_CHANGED",
-                Map.of("phase", type, ROUND_TAG, round)
+                Map.of("phase", type, ROUND_TAG, round),
+                phaseName + " of round " + round + " has begun."
         );
 
         switch (type) {   // switch on the enum, not on the GamePhase entity
             case NIGHT -> {
-                //simple send event to the broadcasters with mafia voting. Maybe later will be added new entity for voting save
-                broadcaster.toMafiaAfterCommit(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+                if (round > 1) {
+                    broadcaster.toMafiaAfterCommit(game.getId(), "START_NIGHT_VOTING", Map.of(ROUND_TAG, round));
+                }
             }
-            case DAY -> {
-                //simple send event to the broadcasters. Maybe later will be added new entity for voting save
-                broadcaster.toGameAfterCommit(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
-            }
-            default -> {
-            }
+            case DAY -> broadcaster.toGameAfterCommit(game.getId(), "START_DAY_VOTING", Map.of(ROUND_TAG, round));
+            default -> throw new IllegalStateException("Unexpected value: " + type);
         }
     }
 
@@ -66,16 +64,11 @@ public class GamePhaseService {
      * @return - the latest phase of the game, or null if the game has no phases
      */
     public GamePhase currentPhase(Game game) {
-        return findCurrentPhase(game).orElseThrow(() ->
-                new IllegalStateException("Game has no open phase")
-        );
+        return findCurrentPhase(game).orElseThrow(() -> new IllegalStateException("Game has no open phase"));
     }
 
     public Optional<GamePhase> findCurrentPhase(Game game) {
-        return phases.findByGameIdAndStatus(
-                game.getId(),
-                GamePhaseStatus.OPENED
-        );
+        return phases.findByGameIdAndStatus(game.getId(), GamePhaseStatus.OPENED);
     }
 
     /**
@@ -86,9 +79,7 @@ public class GamePhaseService {
      */
     @Transactional
     public void endPhase(GamePhase phase) {
-        if (phase.getStatus() != GamePhaseStatus.OPENED) {
-            throw new IllegalStateException("Phase is already closed");
-        }
+        if (phase.getStatus() != GamePhaseStatus.OPENED) throw new IllegalStateException("Phase is already closed");
 
         phase.setStatus(GamePhaseStatus.CLOSED);
         phase.setEndedAt(Instant.now());

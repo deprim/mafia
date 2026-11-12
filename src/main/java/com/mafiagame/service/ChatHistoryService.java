@@ -1,6 +1,9 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.GameAccessDeniedException;
+import com.mafiagame.exception.InvalidSessionException;
 import com.mafiagame.dto.ChatMessage;
+import com.mafiagame.dto.ChatMessagePayload;
 import com.mafiagame.dto.PersistedChatMessage;
 import com.mafiagame.model.ChatMessageRecord;
 import com.mafiagame.model.Player;
@@ -9,10 +12,8 @@ import com.mafiagame.repository.GameRepository;
 import com.mafiagame.repository.PlayerRepository;
 import com.mafiagame.utils.SessionTokenGenerator;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -44,6 +45,15 @@ public class ChatHistoryService {
 
     @Transactional
     public PersistedChatMessage save(UUID gameId, ChatMessage message) {
+        return save(gameId, new ChatMessagePayload(message.message(), message.username(), false));
+    }
+
+    @Transactional
+    public PersistedChatMessage saveSystemMessage(UUID gameId, String message) {
+        return save(gameId, new ChatMessagePayload(message, "Game", true));
+    }
+
+    private PersistedChatMessage save(UUID gameId, ChatMessagePayload message) {
         try {
             String payload = objectMapper.writeValueAsString(message);
             ChatMessageRecord saved = messageRepository.save(new ChatMessageRecord(
@@ -70,31 +80,32 @@ public class ChatHistoryService {
 
     private Player requireRoomPlayer(UUID gameId, String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
+            throw new InvalidSessionException("A session token is required");
         }
         Player player = playerRepository.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawToken))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
         if (!player.getGame().getId().equals(gameId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
+            throw new GameAccessDeniedException("Player is not part of this room");
         }
         return player;
     }
 
     private PersistedChatMessage toResponse(ChatMessageRecord saved) {
         try {
-            ChatMessage message = objectMapper.readValue(saved.getPayload(), ChatMessage.class);
+            ChatMessagePayload message = objectMapper.readValue(saved.getPayload(), ChatMessagePayload.class);
             return toResponse(saved, message);
         } catch (JacksonException e) {
             throw new IllegalStateException("Stored chat message is invalid", e);
         }
     }
 
-    private PersistedChatMessage toResponse(ChatMessageRecord saved, ChatMessage message) {
+    private PersistedChatMessage toResponse(ChatMessageRecord saved, ChatMessagePayload message) {
         return new PersistedChatMessage(
                 saved.getId(),
                 saved.getCreatedAt(),
-                message.message(),
-                message.username()
+                message.getMessage(),
+                message.getUsername(),
+                message.isSystem()
         );
     }
 }

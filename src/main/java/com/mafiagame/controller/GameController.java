@@ -31,7 +31,7 @@ public class GameController {
     @GetMapping("/{id}/chat")
     public ResponseEntity<java.util.List<PersistedChatMessage>> getRecentChatMessages(
             @PathVariable UUID id,
-            @RequestHeader("X-Session-Token") String rawSessionToken
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken
     ) {
         return ResponseEntity.ok(chatHistoryService.recent(id, rawSessionToken));
     }
@@ -48,25 +48,36 @@ public class GameController {
     @PostMapping("/{id}/start")
     public ResponseEntity<Void> startGame(
             @PathVariable UUID id,
-            @RequestHeader("X-Session-Token") String rawSessionToken
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken
     ) {
         gameLifecycleService.startGame(id, rawSessionToken);
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}/settings")
+    public ResponseEntity<GameResponse> updateGameSettings(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken,
+            @Valid @RequestBody UpdateGameSettingsRequest request
+    ) {
+        return ResponseEntity.ok(
+                gameLifecycleService.updateMafiaCount(id, rawSessionToken, request.mafiaCount())
+        );
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteGame(
             @PathVariable UUID id,
-            @RequestHeader("X-Session-Token") String rawSessionToken
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken
     ) {
         gameService.deleteGame(id, rawSessionToken);
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping({"/{id}/advance", "/{id}/adavance"})
+    @PostMapping("/{id}/advance")
     public ResponseEntity<Void> advancePhase(
             @PathVariable UUID id,
-            @RequestHeader("X-Session-Token") String rawSessionToken,
+            @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken,
             @Valid @RequestBody AdvancePhaseRequest request
     ) {
 

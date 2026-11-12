@@ -1,6 +1,10 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.GameAccessDeniedException;
+import com.mafiagame.exception.InvalidRequestException;
+import com.mafiagame.exception.InvalidSessionException;
 import com.mafiagame.dto.PlayerDetailsResponse;
+import com.mafiagame.dto.PlayerResponse;
 import com.mafiagame.model.Elimination;
 import com.mafiagame.model.GamePhase;
 import com.mafiagame.model.Player;
@@ -11,14 +15,11 @@ import com.mafiagame.utils.enums.PlayerRole;
 import com.mafiagame.utils.enums.PlayerStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -66,13 +67,9 @@ public class PlayerService {
         UUID gameId = current.getGame().getId();
         UUID phaseId = current.getId();
 
-        if (!player.getGame().getId().equals(gameId)) {
-            throw new RuntimeException("Player belongs to another game");
-        }
+        if (!player.getGame().getId().equals(gameId)) throw new IllegalStateException("Player belongs to another game");
 
-        if (player.getStatus() != PlayerStatus.ALIVE) {
-            throw new RuntimeException("Player is already dead");
-        }
+        if (player.getStatus() != PlayerStatus.ALIVE) throw new IllegalStateException("Player is already dead");
 
         eliminations.save(new Elimination(current, player));
         player.setStatus(PlayerStatus.DEAD);
@@ -102,67 +99,72 @@ public class PlayerService {
     @Transactional
     public void assignRoles(UUID gameId, Integer configuredMafiaCount) {
         List<Player> roster = players.findByGameId(gameId);
-        if (roster.size() < MIN_PLAYERS) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Need at least " + MIN_PLAYERS + " players"
-            );
-        }
-        if (configuredMafiaCount == null
-                || configuredMafiaCount < 1
-                || 2L * configuredMafiaCount >= roster.size()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Mafia count must be at least 1 and fewer than the number of Civilians"
-            );
-        }
+        if (roster.size() < MIN_PLAYERS)
+            throw new InvalidRequestException("Need at least " + MIN_PLAYERS + " players");
+        validateMafiaCount(roster.size(), configuredMafiaCount);
 
         Collections.shuffle(roster);
-        for (int i = 0; i < roster.size(); i++) {
+        for (int i = 0; i < roster.size(); i++)
             roster.get(i).setRole(i < configuredMafiaCount ? PlayerRole.MAFIA : PlayerRole.CIVILIAN);
-        }
         players.saveAll(roster);
-        log.info(
-                "Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}",
-                gameId, roster.size(), configuredMafiaCount
-        );
+        log.info("Roles assigned to players in game {}, playersCount = {}, mafiaCount = {}", gameId, roster.size(), configuredMafiaCount);
+    }
+
+    public void validateMafiaCountForGame(UUID gameId, Integer configuredMafiaCount) {
+        validateMafiaCount(players.findByGameId(gameId).size(), configuredMafiaCount);
+    }
+
+    private void validateMafiaCount(int playerCount, Integer configuredMafiaCount) {
+        if (configuredMafiaCount == null || configuredMafiaCount < 1) {
+            throw new InvalidRequestException("Mafia count must be at least 1");
+        }
+
+        int maximumMafiaCount = Math.max(0, (playerCount - 1) / 2);
+        if (configuredMafiaCount > maximumMafiaCount) {
+            throw new InvalidRequestException(
+                    "There must be at least one more civilian than Mafia"
+            );
+        }
     }
 
     public Player requireHost(UUID gameId, String rawSessionToken) {
         if (rawSessionToken == null || rawSessionToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
+            throw new InvalidSessionException("A session token is required");
         }
 
         Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
 
-        if (!requester.getGame().getId().equals(gameId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
-        }
-        if (!requester.isHost()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the host can manage this game");
-        }
+        if (!requester.getGame().getId().equals(gameId))
+            throw new GameAccessDeniedException("Player is not part of this room");
+        if (!requester.isHost())
+            throw new GameAccessDeniedException("Only the host can manage this game");
 
         return requester;
     }
 
     public PlayerDetailsResponse getOwnDetails(UUID playerId, String rawSessionToken) {
-        if (rawSessionToken == null || rawSessionToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
-        }
+        if (rawSessionToken == null || rawSessionToken.isBlank()) throw new InvalidSessionException("A session token is required");
 
         Player requester = players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawSessionToken))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
 
-        if (!requester.getId().equals(playerId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Players can only access their own details");
+        if (!requester.getId().equals(playerId)) throw new GameAccessDeniedException("Players can only access their own details");
+
+        List<PlayerResponse> mafiaTeammates = List.of();
+        if (requester.getRole() == PlayerRole.MAFIA) {
+            mafiaTeammates = players.findByGameId(requester.getGame().getId()).stream()
+                .filter(player -> player.getRole() == PlayerRole.MAFIA && !player.getId().equals(requester.getId()))
+                .map(player -> new PlayerResponse(
+                        player.getId(),
+                        player.getNickname(),
+                        player.isHost(),
+                        player.getStatus()
+                ))
+                .toList();
         }
 
-        return PlayerDetailsResponse.from(requester);
+        return PlayerDetailsResponse.from(requester, mafiaTeammates);
     }
 
-    public boolean isEnoughPlayers(UUID gameId) {
-        List<Player> list = players.findByGameId(gameId);
-        return  list.size() < MIN_PLAYERS;
-    }
 }
