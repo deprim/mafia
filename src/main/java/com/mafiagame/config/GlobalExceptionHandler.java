@@ -31,10 +31,6 @@ public class GlobalExceptionHandler {
         return detail;
     }
 
-    @ExceptionHandler(UnsupportedOperationException.class)
-    public ProblemDetail handleNotImplemented(UnsupportedOperationException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_IMPLEMENTED, ex.getMessage());
-    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ValidationErrorResponse> handleValidation(

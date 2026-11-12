@@ -74,7 +74,7 @@ public class GameController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping({"/{id}/advance", "/{id}/adavance"})
+    @PostMapping("/{id}/advance")
     public ResponseEntity<Void> advancePhase(
             @PathVariable UUID id,
             @RequestHeader(value = "X-Session-Token", required = false) String rawSessionToken,
