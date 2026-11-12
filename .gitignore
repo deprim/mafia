@@ -34,8 +34,8 @@ build/
 
 # Environment variables
 .env
-.env
-!.env
+.env.*
+!.env.example
 
 # Log files
 *.log
