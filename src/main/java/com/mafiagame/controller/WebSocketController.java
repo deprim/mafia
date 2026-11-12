@@ -18,7 +18,7 @@ import java.util.UUID;
 
 @Controller
 @RequiredArgsConstructor
-public class WebSocketExampleController {
+public class WebSocketController {
     private final PlayerRepository players;
     private final ChatHistoryService chatHistoryService;
     private final GameBroadcaster broadcaster;
