@@ -120,7 +120,7 @@ No separate frontend server, microservices, reactive WebFlux stack, or external 
 
 The repository is currently a Spring Boot scaffold, not a playable game. It has a Java 21 application entry point, a Thymeleaf-rendered root page with pinned local Bootstrap and STOMP.js browser assets, a context-load test, and configuration for PostgreSQL, Flyway, and Hibernate schema validation. The Maven project includes JPA, validation, Spring MVC, Thymeleaf, WebSocket, PostgreSQL, Flyway, and Springdoc dependencies. It does not yet contain the proposed game entities, repositories, game services, admin security/dashboard, or database migrations.
 
-The datasource configuration reads `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. `.env.example` documents these values, but Spring Boot does not load a `.env` file automatically; configure them in the shell or IDE run configuration. For PowerShell, local values can be set like this:
+The datasource configuration reads `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. `.env` documents these values, but Spring Boot does not load a `.env` file automatically; configure them in the shell or IDE run configuration. For PowerShell, local values can be set like this:
 
 ```powershell
 $env:DB_URL = "jdbc:postgresql://localhost:5432/mafia_db"
