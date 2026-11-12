@@ -1,5 +1,7 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.GameConflictException;
+import com.mafiagame.exception.GameNotFoundException;
 import com.mafiagame.dto.EliminationResult;
 import com.mafiagame.dto.GameResponse;
 import com.mafiagame.model.Game;
@@ -11,10 +13,8 @@ import com.mafiagame.utils.enums.*;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -35,9 +35,8 @@ public class GameLifecycleService {
     @Transactional
     public void startGame(UUID gameId, String rawSessionToken) {
         Game game = lock(gameId);
-
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.WAITING) throw new ResponseStatusException(HttpStatus.CONFLICT, "Only waiting games can be started");
+        if (game.getStatus() != GameStatus.WAITING) throw new GameConflictException("Only waiting games can be started");
 
         playerService.assignRoles(gameId, game.getMafiaCount());
         game.setStatus(GameStatus.STARTED);
@@ -53,7 +52,7 @@ public class GameLifecycleService {
         Game game = lock(gameId);
         playerService.requireHost(gameId, rawSessionToken);
         if (game.getStatus() != GameStatus.WAITING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Game settings can only be changed before the game starts");
+            throw new GameConflictException("Game settings can only be changed before the game starts");
         }
 
         playerService.validateMafiaCountForGame(gameId, mafiaCount);
@@ -73,16 +72,15 @@ public class GameLifecycleService {
     public void advance(UUID gameId, String rawSessionToken, PhaseType expectedType, int expectedRound) {
         Game game = lock(gameId);
         playerService.requireHost(gameId, rawSessionToken);
-        if (game.getStatus() != GameStatus.STARTED) throw new ResponseStatusException(HttpStatus.CONFLICT, "Game has not active status: " + game.getStatus());   // WAITING or FINISHED: nothing to advance
+        if (game.getStatus() != GameStatus.STARTED) throw new GameConflictException("Game has not active status: " + game.getStatus());   // WAITING or FINISHED: nothing to advance
 
         GamePhase current = gamePhaseService.currentPhase(game);
         if (current.getPhaseType() != expectedType || current.getRoundNumber() != expectedRound) {
             log.debug("Ignoring stale advance for game {}", gameId);
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ignoring stale advance for game " + gameId);
+            throw new GameConflictException("Ignoring stale advance for game " + gameId);
         }
         if (!voting.allEligibleVotersHaveVoted(current)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
+            throw new GameConflictException(
                     "All players eligible to vote must vote before the phase can advance"
             );
         }
@@ -213,6 +211,6 @@ public class GameLifecycleService {
 
     private Game lock(UUID gameId) {
         return games.findByIdForUpdate(gameId)
-                .orElseThrow(() -> new IllegalArgumentException("Game not found"));
+                .orElseThrow(() -> new GameNotFoundException("Game not found"));
     }
 }

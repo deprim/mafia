@@ -1,5 +1,11 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.ApiException;
+import com.mafiagame.exception.GameAccessDeniedException;
+import com.mafiagame.exception.GameConflictException;
+import com.mafiagame.exception.InvalidRequestException;
+import com.mafiagame.exception.InvalidSessionException;
+import com.mafiagame.exception.ResourceNotFoundException;
 import com.mafiagame.dto.VoteResponse;
 import com.mafiagame.dto.VoteStatusResponse;
 import com.mafiagame.model.Game;
@@ -21,9 +27,7 @@ import com.mafiagame.websocket.GameBroadcaster;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -51,32 +55,32 @@ public class VotingService {
      * @param phaseId the identifier of the game phase in which the vote is being cast
      * @param targetId the identifier of the player selected as the vote target
      * @param rawToken the authentication token used to identify the voting player
-     * @throws ResponseStatusException if the phase, game, or target cannot be found, if the voter is
+     * @throws ApiException if the phase, game, or target cannot be found, if the voter is
      *         not part of the game, if the game is not running, if the phase is no longer open, or if
      *         the vote is invalid
      */
     @Transactional
     public void castVote(UUID phaseId, UUID targetId, String rawToken) {
         GamePhase requestedPhase = phases.findById(phaseId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Phase not found"));
 
         Game game = games.findByIdForUpdate(requestedPhase.getGame().getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Game not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Game not found"));
 
         Player voter = requirePlayer(rawToken);
 
         if (!voter.getGame().getId().equals(game.getId()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
+            throw new GameAccessDeniedException("Player is not part of this room");
 
         if (game.getStatus() != GameStatus.STARTED)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Game is not running");
+            throw new GameConflictException("Game is not running");
 
         GamePhase phase = phases.findByGameIdAndStatus(game.getId(), GamePhaseStatus.OPENED)
                 .filter(current -> current.getId().equals(phaseId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "This phase is no longer open"));
+                .orElseThrow(() -> new GameConflictException("This phase is no longer open"));
 
         Player target = players.findById(targetId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Target not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Target not found"));
 
         validateVote(phase, voter, target);
 
@@ -104,7 +108,7 @@ public class VotingService {
         Player player = requirePlayer(rawToken);
 
         Vote vote = votes.findByPhaseIdAndVoterId(phaseId, player.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "You have no vote in this phase"));
+                .orElseThrow(() -> new ResourceNotFoundException("You have no vote in this phase"));
 
         return new VoteResponse(vote.getPhase().getId(), vote.getTarget().getId());
     }
@@ -113,12 +117,12 @@ public class VotingService {
     public VoteStatusResponse getVoteStatus(UUID phaseId, String rawToken) {
         Player viewer = requirePlayer(rawToken);
         GamePhase phase = phases.findById(phaseId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Phase not found"));
 
         if (!viewer.getGame().getId().equals(phase.getGame().getId()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Player is not part of this room");
+            throw new GameAccessDeniedException("Player is not part of this room");
         if (phase.getStatus() != GamePhaseStatus.OPENED || phase.getGame().getStatus() != GameStatus.STARTED)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "This phase is no longer open");
+            throw new GameConflictException("This phase is no longer open");
 
         List<Player> eligibleVoters = eligibleVoters(phase);
         List<UUID> eligibleVoterIds = eligibleVoters.stream()
@@ -189,14 +193,14 @@ public class VotingService {
      *
      * @param rawToken the raw session token to validate and look up
      * @return the player associated with the session token
-     * @throws ResponseStatusException if the token is null, blank, or does not match an existing player session
+     * @throws ApiException if the token is null, blank, or does not match an existing player session
      */
     private Player requirePlayer(String rawToken) {
         if (rawToken == null || rawToken.isBlank())
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A session token is required");
+            throw new InvalidSessionException("A session token is required");
 
         return players.findBySessionTokenHash(SessionTokenGenerator.hashToken(rawToken))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid session token"));
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
     }
 
     /**
@@ -210,29 +214,29 @@ public class VotingService {
      * @param phase the current game phase in which the vote is being cast
      * @param voter the player attempting to cast the vote
      * @param target the player selected as the vote target
-     * @throws ResponseStatusException if the vote is invalid for the current game,
+     * @throws ApiException if the vote is invalid for the current game,
      *         player status, target selection, phase, or voter role
      */
     private void validateVote(GamePhase phase, Player voter, Player target) {
         UUID gameId = phase.getGame().getId();
 
         if (!target.getGame().getId().equals(gameId))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Target is not part of this room");
+            throw new GameAccessDeniedException("Target is not part of this room");
 
         if (voter.getStatus() != PlayerStatus.ALIVE || target.getStatus() != PlayerStatus.ALIVE)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Voter and target must be alive");
+            throw new GameConflictException("Voter and target must be alive");
 
         if (voter.getId().equals(target.getId()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot vote for yourself");
+            throw new InvalidRequestException("You cannot vote for yourself");
 
         if (phase.getPhaseType() == PhaseType.NIGHT && phase.getRoundNumber() == 1)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Voting is unavailable on the first night");
+            throw new GameConflictException("Voting is unavailable on the first night");
 
         VotingType type = VotingType.forPhase(phase.getPhaseType())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Voting is unavailable in this phase"));
+                .orElseThrow(() -> new GameConflictException("Voting is unavailable in this phase"));
 
         if (!type.canVote(voter.getRole()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot vote in this phase");
+            throw new GameAccessDeniedException("You cannot vote in this phase");
     }
 
     private List<Player> eligibleVoters(GamePhase phase) {

@@ -1,5 +1,10 @@
 package com.mafiagame.service;
 
+import com.mafiagame.exception.ApiException;
+import com.mafiagame.exception.GameAccessDeniedException;
+import com.mafiagame.exception.GameConflictException;
+import com.mafiagame.exception.InvalidSessionException;
+import com.mafiagame.exception.ResourceNotFoundException;
 import com.mafiagame.dto.*;
 import com.mafiagame.model.Game;
 import com.mafiagame.model.GameResult;
@@ -12,14 +17,11 @@ import com.mafiagame.utils.SessionTokenGenerator;
 import com.mafiagame.utils.enums.GameStatus;
 import com.mafiagame.websocket.GameBroadcaster;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -55,11 +57,10 @@ public class GameService {
 
     @Transactional
     public GameCreationResult createGame(CreateGameRequest request) {
-        String nickname = requireNickname(request.nickname());
+        String nickname = request.nickname();
         String joinCode = JoinCodeGenerator.generateJoinCode();
         String rawSessionToken = SessionTokenGenerator.generateToken();
 
-        // TODO Check if join code already exists
 
         Game game = new Game(1, joinCode);
         gameRepository.save(game);
@@ -80,24 +81,19 @@ public class GameService {
 
     @Transactional
     public PlayerJoinResult joinGame(JoinGameRequest request) {
-        String joinCode = request.joinCode() == null
-                ? ""
-                : request.joinCode().trim().toUpperCase(Locale.ROOT);
-        if (joinCode.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room code is required");
-        }
+        String joinCode = request.joinCode();
 
         Game game = gameRepository.findByJoinCode(joinCode)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found"));
         if (game.getStatus() != GameStatus.WAITING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Room is no longer accepting players");
+            throw new GameConflictException("Room is no longer accepting players");
         }
 
-        String nickname = requireNickname(request.nickname());
+        String nickname = request.nickname();
         boolean nicknameTaken = playerRepository.findByGameId(game.getId()).stream()
                 .anyMatch(player -> player.getNickname().equalsIgnoreCase(nickname));
         if (nicknameTaken) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "That nickname is already used in this room");
+            throw new GameConflictException("That nickname is already used in this room");
         }
 
         String rawSessionToken = SessionTokenGenerator.generateToken();
@@ -138,11 +134,11 @@ public class GameService {
      *
      * @param id the unique identifier of the game room to retrieve
      * @return the current game state, including room details, players, current phase, and result if available
-     * @throws ResponseStatusException if no game room exists with the specified identifier
+     * @throws ApiException if no game room exists with the specified identifier
      */
     public GameStateResponse getRoomState(UUID id) {
         Game game = gameRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Room not found"));
 
         List<PlayerResponse> players = playerRepository.findByGameId(id).stream()
                 .map(player -> new PlayerResponse(
@@ -177,12 +173,12 @@ public class GameService {
      *
      * @param id the unique identifier of the game whose result is to be retrieved
      * @return the game result response for the specified game
-     * @throws ResponseStatusException if no game result is found for the specified identifier
+     * @throws ApiException if no game result is found for the specified identifier
      */
     public GameResultResponse getResult(UUID id) {
 
         GameResult gameResult = gameResultRepository.findByGameId(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Game result not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Game result not found"));
 
         return GameResultResponse.from(gameResult);
 
@@ -216,50 +212,31 @@ public class GameService {
      * @param gameId   the unique identifier of the game to be validated
      * @param rawToken the raw session token of the player to authenticate
      * @return the game instance that meets the specified conditions
-     * @throws RuntimeException if the session token is null or blank
-     * @throws RuntimeException if the player associated with the token is not found
-     * @throws RuntimeException if the player is not the host of the specified game
-     * @throws RuntimeException if the game is not in the "waiting" state
+     * @throws InvalidSessionException if the session token is missing or invalid
+     * @throws GameAccessDeniedException if the player is not the host of this game
+     * @throws GameConflictException if the game is not waiting
      */
     private Game requireWaitingGameForHost(UUID gameId, String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
-            throw new RuntimeException("Token is required for this action"); // TODO create custom exception
+            throw new InvalidSessionException("Token is required for this action");
         }
 
         String tokenHash = SessionTokenGenerator.hashToken(rawToken);
 
         Player player = playerRepository.findBySessionTokenHash(tokenHash)
-                .orElseThrow(() -> new RuntimeException("Player not found")); // TODO create custom exception
+                .orElseThrow(() -> new InvalidSessionException("Invalid session token"));
 
         Game game = player.getGame();
 
         if (!game.getId().equals(gameId) || !player.isHost()) {
-            throw new RuntimeException("Player is not host of this game"); // TODO create custom exception
+            throw new GameAccessDeniedException("Player is not host of this game");
         }
 
         if (game.getStatus() != GameStatus.WAITING) {
-            throw new RuntimeException("Game is not in waiting state"); // TODO create custom exception
+            throw new GameConflictException("Game is not in waiting state");
         }
 
         return game;
     }
 
-    /**
-     * Validates that the supplied nickname is present and within the allowed length,
-     * then returns the trimmed nickname.
-     *
-     * @param nickname the nickname to validate
-     * @return the trimmed nickname
-     * @throws ResponseStatusException if the nickname is null, blank, or longer than 40 characters
-     */
-    private String requireNickname(String nickname) {
-        if (nickname == null || nickname.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname is required");
-        }
-        String normalized = nickname.trim();
-        if (normalized.length() > 40) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname must be 40 characters or fewer");
-        }
-        return normalized;
-    }
 }
