@@ -1,6 +1,8 @@
 package com.mafiagame.config;
 
 import com.mafiagame.dto.ValidationErrorResponse;
+import com.mafiagame.exception.ApiException;
+import com.mafiagame.exception.GameNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,20 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ApiException.class)
+    public ProblemDetail handleApiException(ApiException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(ex.getStatusCode(), ex.getReason());
+        detail.setProperty("code", ex.code());
+        return detail;
+    }
+
+    @ExceptionHandler(GameNotFoundException.class)
+    public ProblemDetail handleGameNotFound(GameNotFoundException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        detail.setProperty("code", "RESOURCE_NOT_FOUND");
+        return detail;
+    }
 
     @ExceptionHandler(UnsupportedOperationException.class)
     public ProblemDetail handleNotImplemented(UnsupportedOperationException ex) {

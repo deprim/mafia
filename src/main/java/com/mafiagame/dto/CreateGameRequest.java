@@ -1,4 +1,3 @@
-
 package com.mafiagame.dto;
 
 import jakarta.validation.constraints.NotBlank;
@@ -10,4 +9,7 @@ public record CreateGameRequest(
                 message = "Nickname must be between 2 and 40 characters")
         String nickname
 ) {
+    public CreateGameRequest {
+        nickname = nickname == null ? null : nickname.trim();
+    }
 }
