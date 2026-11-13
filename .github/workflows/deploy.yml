@@ -24,10 +24,11 @@ jobs:
         id: compose
         env:
           MAFIA_DB_PASSWORD: ${{ secrets.MAFIA_DB_PASSWORD }}
-        run: docker compose up --build --wait --wait-timeout 180
+        # The Bootcamp wrapper appends its policy override to the Compose file list.
+        run: docker compose -f compose.yaml up --build --wait --wait-timeout 180
 
       - name: Show container logs on failure
         if: failure() && steps.compose.outcome == 'failure'
         env:
           MAFIA_DB_PASSWORD: ${{ secrets.MAFIA_DB_PASSWORD }}
-        run: docker compose logs --no-color --tail=100
+        run: docker compose -f compose.yaml logs --no-color --tail=100
