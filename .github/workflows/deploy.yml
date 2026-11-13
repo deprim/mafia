@@ -1,0 +1,33 @@
+name: Deploy to ACN Bootcamp
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acn-bootcamp-team2
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build and start the application
+        id: compose
+        env:
+          MAFIA_DB_PASSWORD: ${{ secrets.MAFIA_DB_PASSWORD }}
+        run: docker compose up --build --wait --wait-timeout 180
+
+      - name: Show container logs on failure
+        if: failure() && steps.compose.outcome == 'failure'
+        env:
+          MAFIA_DB_PASSWORD: ${{ secrets.MAFIA_DB_PASSWORD }}
+        run: docker compose logs --no-color --tail=100
